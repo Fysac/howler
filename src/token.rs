@@ -6,7 +6,14 @@ pub enum TokenType {
     Int,
     Assign,
     Eq,
+    NotEq,
     Plus,
+    Minus,
+    Bang,
+    Asterisk,
+    Slash,
+    Lt,
+    Gt,
     Comma,
     Semicolon,
     LeftParen,
@@ -15,6 +22,11 @@ pub enum TokenType {
     RightBrace,
     Function,
     Let,
+    True,
+    False,
+    If,
+    Else,
+    Return,
 }
 
 #[derive(Debug, PartialEq)]
@@ -68,6 +80,39 @@ impl Lexer {
             '+' => Token {
                 type_: TokenType::Plus,
                 literal: "+",
+            },
+            '-' => Token {
+                type_: TokenType::Minus,
+                literal: "-",
+            },
+            '!' => match self.lookahead() {
+                '=' => {
+                    self.read_char();
+                    Token {
+                        type_: TokenType::NotEq,
+                        literal: "!=",
+                    }
+                }
+                _ => Token {
+                    type_: TokenType::Bang,
+                    literal: "!",
+                },
+            },
+            '*' => Token {
+                type_: TokenType::Asterisk,
+                literal: "*",
+            },
+            '/' => Token {
+                type_: TokenType::Slash,
+                literal: "/",
+            },
+            '<' => Token {
+                type_: TokenType::Lt,
+                literal: "<",
+            },
+            '>' => Token {
+                type_: TokenType::Gt,
+                literal: ">",
             },
             ',' => Token {
                 type_: TokenType::Comma,
@@ -144,6 +189,11 @@ impl Lexer {
             type_: match ident {
                 "let" => TokenType::Let,
                 "fn" => TokenType::Function,
+                "true" => TokenType::True,
+                "false" => TokenType::False,
+                "if" => TokenType::If,
+                "else" => TokenType::Else,
+                "return" => TokenType::Return,
                 _ => TokenType::Ident,
             },
             literal: ident,
@@ -186,10 +236,23 @@ mod tests {
         let mut lexer = Lexer::new(
             "let five = 5;
             let ten = 10;
+
             let add = fn(x, y) {
                 x + y;
             };
-            let result = add(five, ten);"
+
+            let result = add(five, ten);
+            !-/*5;
+            5 < 10 > 5;
+
+            if (5 < 10) {
+                return true;
+            } else {
+                return false;
+            }
+
+            10 == 10;
+            10 != 9;"
                 .as_bytes()
                 .to_vec(),
         );
@@ -339,8 +402,152 @@ mod tests {
                 literal: ";",
             },
             Token {
-                type_: TokenType::EOF,
-                literal: "\0",
+                type_: TokenType::Bang,
+                literal: "!",
+            },
+            Token {
+                type_: TokenType::Minus,
+                literal: "-",
+            },
+            Token {
+                type_: TokenType::Slash,
+                literal: "/",
+            },
+            Token {
+                type_: TokenType::Asterisk,
+                literal: "*",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "5",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "5",
+            },
+            Token {
+                type_: TokenType::Lt,
+                literal: "<",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "10",
+            },
+            Token {
+                type_: TokenType::Gt,
+                literal: ">",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "5",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
+            },
+            Token {
+                type_: TokenType::If,
+                literal: "if",
+            },
+            Token {
+                type_: TokenType::LeftParen,
+                literal: "(",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "5",
+            },
+            Token {
+                type_: TokenType::Lt,
+                literal: "<",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "10",
+            },
+            Token {
+                type_: TokenType::RightParen,
+                literal: ")",
+            },
+            Token {
+                type_: TokenType::LeftBrace,
+                literal: "{",
+            },
+            Token {
+                type_: TokenType::Return,
+                literal: "return",
+            },
+            Token {
+                type_: TokenType::True,
+                literal: "true",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
+            },
+            Token {
+                type_: TokenType::RightBrace,
+                literal: "}",
+            },
+            Token {
+                type_: TokenType::Else,
+                literal: "else",
+            },
+            Token {
+                type_: TokenType::LeftBrace,
+                literal: "{",
+            },
+            Token {
+                type_: TokenType::Return,
+                literal: "return",
+            },
+            Token {
+                type_: TokenType::False,
+                literal: "false",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
+            },
+            Token {
+                type_: TokenType::RightBrace,
+                literal: "}",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "10",
+            },
+            Token {
+                type_: TokenType::Eq,
+                literal: "==",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "10",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "10",
+            },
+            Token {
+                type_: TokenType::NotEq,
+                literal: "!=",
+            },
+            Token {
+                type_: TokenType::Int,
+                literal: "9",
+            },
+            Token {
+                type_: TokenType::Semicolon,
+                literal: ";",
             },
         ];
 
