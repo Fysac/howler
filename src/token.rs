@@ -31,7 +31,7 @@ pub enum TokenType {
 
 #[derive(Debug, PartialEq)]
 pub struct Token<'a> {
-    type_: TokenType,
+    pub type_: TokenType,
     literal: &'a str,
 }
 
