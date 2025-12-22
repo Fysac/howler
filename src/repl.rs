@@ -1,4 +1,6 @@
-use crate::token::{self, Lexer};
+use crate::ast::*;
+use crate::parser::Parser;
+use crate::token::*;
 use std::io::{self, Write};
 
 pub fn start() {
@@ -7,12 +9,15 @@ pub fn start() {
         io::stdout().flush().unwrap();
 
         let line = std::io::stdin().lines().next().unwrap().unwrap();
-        let mut lexer = Lexer::new(line.into_bytes());
-
-        let mut t = lexer.next_token();
-        while t.type_ != token::TokenType::EOF {
-            print!("{:?}\n", t);
-            t = lexer.next_token();
+        let lexer = Lexer::new(line.into_bytes());
+        let mut parser = Parser::new(lexer);
+        match parser.parse_program() {
+            Ok(prog) => {
+                for stmt in prog.statements {
+                    print!("{}", stmt.token_literal())
+                }
+            }
+            Err(err) => eprintln!("parse error: {:?}", err),
         }
     }
 }

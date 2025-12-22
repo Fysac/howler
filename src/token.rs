@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Illegal,
     EOF,
@@ -54,7 +54,7 @@ const KEYWORD_ELSE: &str = "else";
 const KEYWORD_RETURN: &str = "return";
 
 impl TokenType {
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         match *self {
             TokenType::EOF => CHAR_EOF.to_string(),
             TokenType::Assign => CHAR_ASSIGN.to_string(),
@@ -85,10 +85,10 @@ impl TokenType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub type_: TokenType,
-    literal: String,
+    pub literal: String,
 }
 
 pub struct Lexer {
@@ -223,7 +223,7 @@ impl Lexer {
         self.next += 1;
     }
 
-    fn lookahead(&self) -> char {
+    pub fn lookahead(&self) -> char {
         if self.next >= self.input.len() {
             return '\0';
         }
