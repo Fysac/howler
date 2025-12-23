@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Illegal,
@@ -53,9 +55,9 @@ const KEYWORD_IF: &str = "if";
 const KEYWORD_ELSE: &str = "else";
 const KEYWORD_RETURN: &str = "return";
 
-impl TokenType {
-    pub fn to_string(&self) -> String {
-        match *self {
+impl fmt::Display for TokenType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let str = match self {
             TokenType::EOF => CHAR_EOF.to_string(),
             TokenType::Assign => CHAR_ASSIGN.to_string(),
             TokenType::Eq => format!("{}{}", CHAR_ASSIGN, CHAR_ASSIGN),
@@ -80,8 +82,11 @@ impl TokenType {
             TokenType::If => KEYWORD_IF.to_string(),
             TokenType::Else => KEYWORD_ELSE.to_string(),
             TokenType::Return => KEYWORD_RETURN.to_string(),
-            _ => panic!("no default string representation for {:?}", *self),
-        }
+            TokenType::Int => "int".to_string(),
+            TokenType::Ident => "ident".to_string(),
+            _ => todo!(),
+        };
+        write!(f, "{}", str)
     }
 }
 

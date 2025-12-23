@@ -1,10 +1,12 @@
 use crate::ast;
 use crate::token::*;
+use std::fmt;
 
 pub struct Parser {
     lexer: Lexer,
     cur_token: Token,
     peek_token: Token,
+    pub errors: Vec<ParseError>,
 }
 
 #[derive(Debug)]
@@ -13,9 +15,19 @@ pub enum ParseError {
         expected: TokenType,
         found: TokenType,
     },
-    NotImplemented,
 }
 type ParseResult<T> = Result<T, ParseError>;
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseError::UnexpectedToken { expected, found } => {
+                write!(f, "expected token {}, found {}", expected, found)
+            }
+            _ => todo!(),
+        }
+    }
+}
 
 impl Parser {
     pub fn new(mut lexer: Lexer) -> Self {
@@ -25,6 +37,7 @@ impl Parser {
             lexer,
             cur_token,
             peek_token,
+            errors: vec![],
         }
     }
 
@@ -37,62 +50,64 @@ impl Parser {
         self.cur_token.type_ == token_type
     }
 
-    // Checks if the next token is the expected type and advances if so
-    fn expect_peek(&mut self, token_type: TokenType) -> bool {
+    // Checks if the next token is the expected type and advances if so.
+    // Otherwise, returns an UnexpectedToken error.
+    fn expect_peek(&mut self, token_type: TokenType) -> Result<(), ParseError> {
         if self.peek_token.type_ == token_type {
             self.next_token();
-            return true;
+            return Ok(());
         }
-        false
+
+        Err(ParseError::UnexpectedToken {
+            expected: token_type,
+            found: self.peek_token.type_.clone(),
+        })
     }
 
-    pub fn parse_program(&mut self) -> ParseResult<ast::Program> {
+    pub fn parse_program(&mut self) -> ast::Program {
         let mut statements: Vec<ast::Statement> = vec![];
         while self.cur_token.type_ != TokenType::EOF {
-            statements.push(self.parse_statement()?);
+            match self.parse_statement() {
+                Ok(s) => statements.push(s),
+                Err(e) => {
+                    self.errors.push(e);
+                }
+            }
+            while !self.cur_token_is(TokenType::Semicolon) && !self.cur_token_is(TokenType::EOF) {
+                self.next_token()
+            }
             self.next_token();
         }
-        Ok(ast::Program { statements })
+        ast::Program { statements }
     }
 
     fn parse_statement(&mut self) -> ParseResult<ast::Statement> {
         match self.cur_token.type_ {
             TokenType::Let => self.parse_let_statement(),
-            _ => return Err(ParseError::NotImplemented),
+            _ => panic!(
+                "statement not yet implemented: token {}",
+                self.cur_token.type_
+            ),
         }
     }
 
     fn parse_let_statement(&mut self) -> ParseResult<ast::Statement> {
         let let_token = self.cur_token.clone();
-        if !self.expect_peek(TokenType::Ident) {
-            return Err(ParseError::UnexpectedToken {
-                expected: TokenType::Ident,
-                found: self.peek_token.type_.clone(),
-            });
-        }
+        self.expect_peek(TokenType::Ident)?;
+
         let ident = ast::Identifier {
             token: self.cur_token.clone(),
         };
 
-        if !self.expect_peek(TokenType::Assign) {
-            return Err(ParseError::UnexpectedToken {
-                expected: TokenType::Assign,
-                found: self.peek_token.type_.clone(),
-            });
-        }
+        self.expect_peek(TokenType::Assign)?;
         // Current token is now start of expression
         self.next_token();
 
-        let let_stmt = ast::Statement::Let {
+        Ok(ast::Statement::Let {
             token: let_token,
             name: ident,
             value: self.parse_expression()?,
-        };
-
-        while !(self.cur_token_is(TokenType::Semicolon)) {
-            self.next_token();
-        }
-        Ok(let_stmt)
+        })
     }
 
     fn parse_expression(&mut self) -> ParseResult<ast::Expression> {
@@ -101,7 +116,10 @@ impl Parser {
                 token: self.cur_token.clone(),
                 value: self.cur_token.literal.parse().unwrap(),
             }),
-            _ => return Err(ParseError::NotImplemented),
+            _ => panic!(
+                "expression not yet implemented: token {}",
+                self.cur_token.type_
+            ),
         }
     }
 }
@@ -122,16 +140,41 @@ mod tests {
         .to_vec();
 
         let l = Lexer::new(input);
-        let mut p = Parser::new(l);
+        let mut parser = Parser::new(l);
 
-        let prog = p.parse_program().unwrap_or_else(|e| {
-            panic!("{:?}", e);
-        });
+        let prog = parser.parse_program();
+        assert_eq!(parser.errors.len(), 0);
         assert_eq!(prog.statements.len(), 3);
 
         let expected_idents = vec!["x", "y", "foobar"];
         for (i, expected_ident) in expected_idents.iter().enumerate() {
             test_let_statement(&prog.statements[i], expected_ident)
+        }
+    }
+
+    #[test]
+    fn test_invalid_let_statements() {
+        let input = "
+        let x 5;
+        let = 10;
+        let 838383;
+        "
+        .as_bytes()
+        .to_vec();
+
+        let l = Lexer::new(input);
+        let mut parser = Parser::new(l);
+
+        let prog = parser.parse_program();
+        assert_eq!(prog.statements.len(), 0);
+        let expected_errors = vec![
+            "expected token =, found int",
+            "expected token ident, found =",
+            "expected token ident, found int",
+        ];
+        assert_eq!(parser.errors.len(), expected_errors.iter().len());
+        for (i, e) in parser.errors.iter().enumerate() {
+            assert_eq!(e.to_string(), expected_errors[i]);
         }
     }
 
