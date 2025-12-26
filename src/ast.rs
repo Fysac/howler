@@ -68,11 +68,14 @@ impl Node for Statement {
 
 pub enum Expression {
     IntLiteral { token: Token, value: i64 },
+    Identifier { token: Token },
 }
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::IntLiteral { token, .. } => write!(f, "{}", token.literal),
+            Expression::IntLiteral { token, .. } | Expression::Identifier { token, .. } => {
+                write!(f, "{}", token.literal)
+            }
         }
     }
 }
