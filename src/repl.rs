@@ -1,4 +1,3 @@
-use crate::ast::*;
 use crate::parser::Parser;
 use crate::token::*;
 use std::io::{self, Write};
@@ -18,8 +17,6 @@ pub fn start() {
             }
             continue;
         }
-        for stmt in prog.statements {
-            println!("{}", stmt.token_literal())
-        }
+        println!("{}", prog);
     }
 }

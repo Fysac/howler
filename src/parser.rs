@@ -231,4 +231,45 @@ mod tests {
             assert!(false);
         }
     }
+
+    #[test]
+    fn test_display() {
+        let prog = ast::Program {
+            statements: vec![
+                Statement::Let {
+                    token: Token {
+                        type_: TokenType::Let,
+                        literal: "let".to_string(),
+                    },
+                    name: ast::Identifier {
+                        token: Token {
+                            type_: TokenType::Ident,
+                            literal: "myVar".to_string(),
+                        },
+                    },
+                    value: ast::Expression::IntLiteral {
+                        token: Token {
+                            type_: TokenType::Int,
+                            literal: "10".to_string(),
+                        },
+                        value: 10,
+                    },
+                },
+                Statement::Return {
+                    token: Token {
+                        type_: TokenType::Return,
+                        literal: "return".to_string(),
+                    },
+                    value: ast::Expression::IntLiteral {
+                        token: Token {
+                            type_: TokenType::Int,
+                            literal: "-42".to_string(),
+                        },
+                        value: -42,
+                    },
+                },
+            ],
+        };
+        assert_eq!(prog.to_string(), "let myVar = 10; return -42;");
+    }
 }
