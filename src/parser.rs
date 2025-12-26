@@ -142,7 +142,8 @@ impl Parser {
         let cur = &self.cur_token;
         match cur.type_ {
             TokenType::Ident => self.parse_identifier(),
-            TokenType::Int => self.parse_int(),
+            TokenType::Int => self.parse_integer_literal(),
+            TokenType::Bang | TokenType::Minus => self.parse_prefix(),
             _ => Err(ParseError::UnexpectedToken {
                 expected: TokenType::Int,
                 found: cur.type_.clone(),
@@ -156,10 +157,21 @@ impl Parser {
         })
     }
 
-    fn parse_int(&self) -> ParseResult<Expression> {
+    fn parse_integer_literal(&self) -> ParseResult<Expression> {
+        let value = self.cur_token.literal.parse().unwrap();
         Ok(Expression::IntLiteral {
             token: self.cur_token.clone(),
-            value: self.cur_token.literal.parse().unwrap(),
+            value,
+        })
+    }
+
+    fn parse_prefix(&mut self) -> ParseResult<Expression> {
+        let prefix_token = self.cur_token.clone();
+        self.next_token();
+        let rhs = Box::new(self.parse_expression(Precedence::Prefix)?);
+        Ok(Expression::Prefix {
+            token: prefix_token,
+            rhs,
         })
     }
 }
@@ -282,6 +294,8 @@ mod tests {
             }
         }
     }
+
+    // TODO: add test for prefix expressions
 
     #[test]
     fn test_display() {
