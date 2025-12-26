@@ -12,14 +12,14 @@ pub fn start() {
         let lexer = Lexer::new(line.into_bytes());
         let mut parser = Parser::new(lexer);
         let prog = parser.parse_program();
-        if (parser.errors.len() > 0) {
+        if parser.errors.len() > 0 {
             for e in parser.errors {
-                println!("{}", e)
+                eprintln!("{}", e)
             }
             continue;
         }
         for stmt in prog.statements {
-            print!("{}", stmt.token_literal())
+            println!("{}", stmt.token_literal())
         }
     }
 }

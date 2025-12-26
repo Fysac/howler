@@ -73,10 +73,15 @@ impl Parser {
                     self.errors.push(e);
                 }
             }
+            // Temporary: skip to first semicolon
             while !self.cur_token_is(TokenType::Semicolon) && !self.cur_token_is(TokenType::EOF) {
                 self.next_token()
             }
-            self.next_token();
+            // Skip over consecutive semicolons
+            // TODO: revisit this
+            while self.cur_token_is(TokenType::Semicolon) && !self.cur_token_is(TokenType::EOF) {
+                self.next_token()
+            }
         }
         ast::Program { statements }
     }
@@ -84,6 +89,7 @@ impl Parser {
     fn parse_statement(&mut self) -> ParseResult<ast::Statement> {
         match self.cur_token.type_ {
             TokenType::Let => self.parse_let_statement(),
+            TokenType::Return => self.parse_return_statement(),
             _ => panic!(
                 "statement not yet implemented: token {}",
                 self.cur_token.type_
@@ -106,6 +112,15 @@ impl Parser {
         Ok(ast::Statement::Let {
             token: let_token,
             name: ident,
+            value: self.parse_expression()?,
+        })
+    }
+
+    fn parse_return_statement(&mut self) -> ParseResult<ast::Statement> {
+        let return_token = self.cur_token.clone();
+        self.next_token();
+        Ok(ast::Statement::Return {
+            token: return_token,
             value: self.parse_expression()?,
         })
     }
@@ -182,6 +197,36 @@ mod tests {
         if let Statement::Let { token, name, .. } = stmt {
             assert_eq!(token.literal, "let");
             assert_eq!(name.token_literal(), expected_ident);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_return_statements() {
+        let input = "
+        return 5;
+        return 10;
+        return 993322;
+        "
+        .as_bytes()
+        .to_vec();
+
+        let l = Lexer::new(input);
+        let mut parser = Parser::new(l);
+
+        let prog = parser.parse_program();
+        assert_eq!(parser.errors.len(), 0);
+        assert_eq!(prog.statements.len(), 3);
+
+        for s in prog.statements {
+            test_return_statement(&s);
+        }
+    }
+
+    fn test_return_statement(stmt: &Statement) {
+        if let Statement::Return { token, .. } = stmt {
+            assert_eq!(token.literal, "return");
         } else {
             assert!(false);
         }

@@ -1,4 +1,3 @@
-use crate::token;
 use crate::token::Token;
 
 pub(crate) trait Node {
@@ -19,23 +18,19 @@ impl Node for Program {
 
 pub enum Statement {
     Let {
-        token: token::Token,
+        token: Token,
         name: Identifier,
         value: Expression,
     },
     Return {
+        token: Token,
         value: Expression,
     },
 }
 impl Node for Statement {
     fn token_literal(&self) -> &str {
         match self {
-            Statement::Let {
-                token: t,
-                name: _,
-                value: _,
-            } => &t.literal,
-            _ => panic!("not implemented"),
+            Statement::Let { token: t, .. } | Statement::Return { token: t, .. } => &t.literal,
         }
     }
 }
@@ -45,7 +40,7 @@ pub enum Expression {
 }
 
 pub(crate) struct Identifier {
-    pub(crate) token: token::Token,
+    pub(crate) token: Token,
 }
 impl Node for Identifier {
     fn token_literal(&self) -> &str {
