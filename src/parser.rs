@@ -179,7 +179,6 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Node, Statement};
 
     #[test]
     fn test_let_statements() {
@@ -193,15 +192,26 @@ mod tests {
 
         let l = Lexer::new(input);
         let mut parser = Parser::new(l);
-
         let prog = parser.parse_program();
         assert_eq!(parser.errors.len(), 0);
-        assert_eq!(prog.statements.len(), 3);
 
-        let expected_idents = vec!["x", "y", "foobar"];
-        for (i, expected_ident) in expected_idents.iter().enumerate() {
-            test_let_statement(&prog.statements[i], expected_ident)
+        let expected_bindings = vec![("x", "5"), ("y", "10"), ("foobar", "838383")];
+        assert_eq!(prog.statements.len(), expected_bindings.len());
+        for (i, b) in expected_bindings.iter().enumerate() {
+            test_let_statement(&prog.statements[i], b);
         }
+    }
+    fn test_let_statement(stmt: &Statement, expected_binding: &(&str, &str)) {
+        let Statement::Let { token, name, value } = stmt else {
+            panic!("expected Statement::Let");
+        };
+        assert_eq!(token.literal, "let");
+        assert_eq!(name.token_literal(), expected_binding.0);
+        let Expression::IntLiteral { token, value } = value else {
+            panic!("expected Expression::IntLiteral");
+        };
+        assert_eq!(token.literal, expected_binding.1);
+        assert_eq!(*value, expected_binding.1.parse().unwrap());
     }
 
     #[test]
@@ -216,9 +226,9 @@ mod tests {
 
         let l = Lexer::new(input);
         let mut parser = Parser::new(l);
-
         let prog = parser.parse_program();
         assert_eq!(prog.statements.len(), 0);
+
         let expected_errors = vec![
             "expected token =, found int",
             "expected token ident, found =",
@@ -227,15 +237,6 @@ mod tests {
         assert_eq!(parser.errors.len(), expected_errors.iter().len());
         for (i, e) in parser.errors.iter().enumerate() {
             assert_eq!(e.to_string(), expected_errors[i]);
-        }
-    }
-
-    fn test_let_statement(stmt: &Statement, expected_ident: &str) {
-        if let Statement::Let { token, name, .. } = stmt {
-            assert_eq!(token.literal, "let");
-            assert_eq!(name.token_literal(), expected_ident);
-        } else {
-            assert!(false);
         }
     }
 
@@ -251,22 +252,26 @@ mod tests {
 
         let l = Lexer::new(input);
         let mut parser = Parser::new(l);
-
         let prog = parser.parse_program();
         assert_eq!(parser.errors.len(), 0);
-        assert_eq!(prog.statements.len(), 3);
 
-        for s in prog.statements {
-            test_return_statement(&s);
+        let expected_values = vec!["5", "10", "993322"];
+        assert_eq!(prog.statements.len(), expected_values.len());
+        for (i, s) in prog.statements.iter().enumerate() {
+            test_return_statement(&s, expected_values[i]);
         }
     }
-
-    fn test_return_statement(stmt: &Statement) {
-        if let Statement::Return { token, .. } = stmt {
-            assert_eq!(token.literal, "return");
-        } else {
-            assert!(false);
-        }
+    fn test_return_statement(s: &Statement, expected_value: &str) {
+        let Statement::Return { token, value } = s else {
+            panic!("expected Statement::Return");
+        };
+        assert_eq!(token.literal, "return");
+        // TODO: this kind of shadowing of `value` could get nasty
+        let Expression::IntLiteral { token, value } = value else {
+            panic!("expected Expression::IntLiteral");
+        };
+        assert_eq!(token.literal, expected_value);
+        assert_eq!(*value, expected_value.parse().unwrap());
     }
 
     #[test]
@@ -281,17 +286,16 @@ mod tests {
 
         let l = Lexer::new(input);
         let mut parser = Parser::new(l);
-
         let prog = parser.parse_program();
         assert_eq!(parser.errors.len(), 0);
-        assert_eq!(prog.statements.len(), 3);
+
         let expected_idents = vec!["foobar", "xyz", "hello"];
+        assert_eq!(prog.statements.len(), expected_idents.len());
         for (i, expected_ident) in expected_idents.iter().enumerate() {
-            if let Statement::Expression { token, .. } = &prog.statements[i] {
-                assert_eq!(token.literal, *expected_ident);
-            } else {
-                assert!(false);
-            }
+            let Statement::Expression { token, .. } = &prog.statements[i] else {
+                panic!("expected Statement::Expression");
+            };
+            assert_eq!(token.literal, *expected_ident);
         }
     }
 
@@ -314,13 +318,14 @@ mod tests {
                 int_value: 15,
             },
         ];
+
         for t in tests {
             let l = Lexer::new(t.input.into_bytes());
             let mut parser = Parser::new(l);
             let prog = parser.parse_program();
             assert_eq!(parser.errors.len(), 0);
-            assert_eq!(prog.statements.len(), 1);
 
+            assert_eq!(prog.statements.len(), 1);
             let Statement::Expression { expression, .. } = &prog.statements[0] else {
                 panic!("expected Statement::Expression");
             };
