@@ -78,7 +78,7 @@ impl fmt::Display for Expression {
                 write!(f, "{}", token.literal)
             }
             Expression::Prefix { token, rhs } => {
-                write!(f, "{}{}", token.literal, rhs)
+                write!(f, "({}{})", token.literal, rhs)
             }
         }
     }
