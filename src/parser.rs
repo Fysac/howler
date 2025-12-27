@@ -295,7 +295,45 @@ mod tests {
         }
     }
 
-    // TODO: add test for prefix expressions
+    #[test]
+    fn test_prefix_expressions() {
+        struct PrefixTest {
+            input: String,
+            op: String,
+            int_value: i64,
+        }
+        let tests = vec![
+            PrefixTest {
+                input: "!5".to_owned(),
+                op: "!".to_owned(),
+                int_value: 5,
+            },
+            PrefixTest {
+                input: "-15".to_owned(),
+                op: "-".to_owned(),
+                int_value: 15,
+            },
+        ];
+        for t in tests {
+            let l = Lexer::new(t.input.into_bytes());
+            let mut parser = Parser::new(l);
+            let prog = parser.parse_program();
+            assert_eq!(parser.errors.len(), 0);
+            assert_eq!(prog.statements.len(), 1);
+
+            let Statement::Expression { expression, .. } = &prog.statements[0] else {
+                panic!("expected Statement::Expression");
+            };
+            let Expression::Prefix { token, rhs } = expression else {
+                panic!("expected Expression::Prefix");
+            };
+            assert_eq!(token.literal, t.op);
+            let Expression::IntLiteral { value, .. } = **rhs else {
+                panic!("expected Expression::IntLiteral");
+            };
+            assert_eq!(value, t.int_value);
+        }
+    }
 
     #[test]
     fn test_display() {
