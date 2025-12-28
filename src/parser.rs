@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::parser::Precedence::*;
 use crate::token::*;
 use std::fmt;
 
@@ -17,6 +18,7 @@ pub enum ParseError {
 }
 type ParseResult<T> = Result<T, ParseError>;
 
+#[derive(Copy, Clone)]
 enum Precedence {
     Lowest = 0,
     Equals,
@@ -25,6 +27,17 @@ enum Precedence {
     Product,
     Prefix,
     Call,
+}
+impl Precedence {
+    fn for_token(token_type: &TokenType) -> Precedence {
+        match token_type {
+            TokenType::Plus | TokenType::Minus => Sum,
+            TokenType::Asterisk | TokenType::Slash => Product,
+            TokenType::Gt | TokenType::Lt => LessGreater,
+            TokenType::Eq | TokenType::NotEq => Equals,
+            _ => Lowest,
+        }
+    }
 }
 
 impl fmt::Display for ParseError {
@@ -138,17 +151,48 @@ impl Parser {
         })
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> ParseResult<Expression> {
-        let cur = &self.cur_token;
-        match cur.type_ {
-            TokenType::Ident => self.parse_identifier(),
-            TokenType::Int => self.parse_integer_literal(),
-            TokenType::Bang | TokenType::Minus => self.parse_prefix(),
+    fn parse_expression(&mut self, min_precedence: Precedence) -> ParseResult<Expression> {
+        let cur = self.cur_token.clone();
+        let mut left = match cur.type_ {
+            TokenType::Ident => self.parse_identifier()?,
+            TokenType::Int => self.parse_integer_literal()?,
+            TokenType::Bang | TokenType::Minus => self.parse_prefix()?,
             _ => Err(ParseError::UnexpectedToken {
                 expected: TokenType::Int,
                 found: cur.type_.clone(),
             })?,
+        };
+
+        loop {
+            let operator = self.peek_token.type_.clone();
+            if (Precedence::for_token(&operator) as u8) < (min_precedence as u8) {
+                break;
+            }
+            self.next_token();
+
+            let right = match operator {
+                TokenType::Plus
+                | TokenType::Minus
+                | TokenType::Asterisk
+                | TokenType::Slash
+                | TokenType::Gt
+                | TokenType::Lt
+                | TokenType::Eq
+                | TokenType::NotEq => {
+                    self.next_token();
+                    self.parse_expression(Precedence::for_token(&operator))?
+                }
+                _ => break,
+            };
+
+            left = Expression::Infix {
+                token: cur.clone(),
+                operator,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
         }
+        Ok(left)
     }
 
     fn parse_identifier(&self) -> ParseResult<Expression> {
@@ -168,10 +212,9 @@ impl Parser {
     fn parse_prefix(&mut self) -> ParseResult<Expression> {
         let prefix_token = self.cur_token.clone();
         self.next_token();
-        let rhs = Box::new(self.parse_expression(Precedence::Prefix)?);
         Ok(Expression::Prefix {
             token: prefix_token,
-            rhs,
+            right: Box::new(self.parse_expression(Prefix)?),
         })
     }
 }
@@ -207,11 +250,8 @@ mod tests {
         };
         assert_eq!(token.literal, "let");
         assert_eq!(name.token_literal(), expected_binding.0);
-        let Expression::IntLiteral { token, value } = value else {
-            panic!("expected Expression::IntLiteral");
-        };
+        let token = test_int_literal_expression(value, expected_binding.1.parse().unwrap());
         assert_eq!(token.literal, expected_binding.1);
-        assert_eq!(*value, expected_binding.1.parse().unwrap());
     }
 
     #[test]
@@ -266,12 +306,8 @@ mod tests {
             panic!("expected Statement::Return");
         };
         assert_eq!(token.literal, "return");
-        // TODO: this kind of shadowing of `value` could get nasty
-        let Expression::IntLiteral { token, value } = value else {
-            panic!("expected Expression::IntLiteral");
-        };
+        let token = test_int_literal_expression(value, expected_value.parse().unwrap());
         assert_eq!(token.literal, expected_value);
-        assert_eq!(*value, expected_value.parse().unwrap());
     }
 
     #[test]
@@ -303,18 +339,18 @@ mod tests {
     fn test_prefix_expressions() {
         struct PrefixTest {
             input: String,
-            op: String,
+            operator: String,
             int_value: i64,
         }
         let tests = vec![
             PrefixTest {
                 input: "!5".to_owned(),
-                op: "!".to_owned(),
+                operator: "!".to_owned(),
                 int_value: 5,
             },
             PrefixTest {
                 input: "-15".to_owned(),
-                op: "-".to_owned(),
+                operator: "-".to_owned(),
                 int_value: 15,
             },
         ];
@@ -329,15 +365,105 @@ mod tests {
             let Statement::Expression { expression, .. } = &prog.statements[0] else {
                 panic!("expected Statement::Expression");
             };
-            let Expression::Prefix { token, rhs } = expression else {
+            let Expression::Prefix { token, right } = expression else {
                 panic!("expected Expression::Prefix");
             };
-            assert_eq!(token.literal, t.op);
-            let Expression::IntLiteral { value, .. } = **rhs else {
-                panic!("expected Expression::IntLiteral");
-            };
-            assert_eq!(value, t.int_value);
+            assert_eq!(token.literal, t.operator);
+            test_int_literal_expression(right, t.int_value);
         }
+    }
+
+    #[test]
+    fn test_infix_expressions() {
+        struct InfixTest {
+            input: String,
+            left_value: i64,
+            operator: String,
+            right_value: i64,
+        }
+        let tests = vec![
+            InfixTest {
+                input: "5 + 5".to_owned(),
+                left_value: 5,
+                operator: "+".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 - 5".to_owned(),
+                left_value: 5,
+                operator: "-".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 * 5".to_owned(),
+                left_value: 5,
+                operator: "*".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 / 5".to_owned(),
+                left_value: 5,
+                operator: "/".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 > 5".to_owned(),
+                left_value: 5,
+                operator: ">".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 < 5".to_owned(),
+                left_value: 5,
+                operator: "<".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 == 5".to_owned(),
+                left_value: 5,
+                operator: "==".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 != 5".to_owned(),
+                left_value: 5,
+                operator: "!=".to_owned(),
+                right_value: 5,
+            },
+        ];
+
+        for t in tests {
+            let l = Lexer::new(t.input.into_bytes());
+            let mut parser = Parser::new(l);
+            let prog = parser.parse_program();
+            assert_eq!(parser.errors.len(), 0);
+
+            assert_eq!(prog.statements.len(), 1);
+            let Statement::Expression { expression, .. } = &prog.statements[0] else {
+                panic!("expected Statement::Expression");
+            };
+            let Expression::Infix {
+                token,
+                left,
+                operator,
+                right,
+                ..
+            } = expression
+            else {
+                panic!("expected Expression::Infix");
+            };
+            test_int_literal_expression(left, t.left_value);
+            assert_eq!(operator.to_string(), t.operator);
+            test_int_literal_expression(left, t.right_value);
+        }
+    }
+
+    fn test_int_literal_expression(expr: &Expression, expected_value: i64) -> &Token {
+        let Expression::IntLiteral { token, value } = expr else {
+            panic!("expected Expression::IntLiteral");
+        };
+        assert_eq!(*value, expected_value);
+        token
     }
 
     #[test]

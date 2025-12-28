@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token::{Token, TokenType};
 use std::fmt;
 
 pub(crate) trait Node: fmt::Display {
@@ -46,13 +46,11 @@ pub enum Statement {
 impl fmt::Display for Statement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Statement::Let {
-                token: t,
-                name,
-                value,
-            } => write!(f, "{} {} = {};", self.token_literal(), name, value),
+            Statement::Let { name, value, .. } => {
+                write!(f, "{} {} = {};", self.token_literal(), name, value)
+            }
             Statement::Return { token, value } => write!(f, "{} {};", self.token_literal(), value),
-            Statement::Expression { expression, .. } => write!(f, "{}", expression),
+            Statement::Expression { expression, .. } => write!(f, "{};", expression),
         }
     }
 }
@@ -67,9 +65,23 @@ impl Node for Statement {
 }
 
 pub enum Expression {
-    IntLiteral { token: Token, value: i64 },
-    Identifier { token: Token },
-    Prefix { token: Token, rhs: Box<Expression> },
+    IntLiteral {
+        token: Token,
+        value: i64,
+    },
+    Identifier {
+        token: Token,
+    },
+    Prefix {
+        token: Token,
+        right: Box<Expression>,
+    },
+    Infix {
+        token: Token,
+        operator: TokenType,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
 }
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -77,8 +89,19 @@ impl fmt::Display for Expression {
             Expression::IntLiteral { token, .. } | Expression::Identifier { token, .. } => {
                 write!(f, "{}", token.literal)
             }
-            Expression::Prefix { token, rhs } => {
-                write!(f, "({}{})", token.literal, rhs)
+            Expression::Prefix {
+                token,
+                right: right,
+            } => {
+                write!(f, "({}{})", token.literal, right)
+            }
+            Expression::Infix {
+                operator,
+                left,
+                right,
+                ..
+            } => {
+                write!(f, "({} {} {})", left, operator, right)
             }
         }
     }
