@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum TokenType {
     Illegal,
     EOF,
@@ -84,7 +84,7 @@ impl fmt::Display for TokenType {
             TokenType::Return => KEYWORD_RETURN.to_string(),
             TokenType::Int => "int".to_string(),
             TokenType::Ident => "ident".to_string(),
-            _ => todo!(),
+            _ => panic!("display not yet implemented for token type {:?}", self),
         };
         write!(f, "{}", str)
     }

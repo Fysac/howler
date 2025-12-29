@@ -86,6 +86,10 @@ impl Parser {
         })
     }
 
+    fn peek_precedence(&self) -> Precedence {
+        Precedence::for_token(&self.peek_token.type_)
+    }
+
     pub fn parse_program(&mut self) -> Program {
         let mut statements: Vec<Statement> = vec![];
         while self.cur_token.type_ != TokenType::EOF {
@@ -154,7 +158,7 @@ impl Parser {
     fn parse_expression(&mut self, min_precedence: Precedence) -> ParseResult<Expression> {
         let cur = self.cur_token.clone();
         let mut left = match cur.type_ {
-            TokenType::Ident => self.parse_identifier()?,
+            TokenType::Ident => self.parse_identifier(),
             TokenType::Int => self.parse_integer_literal()?,
             TokenType::Bang | TokenType::Minus => self.parse_prefix()?,
             _ => Err(ParseError::UnexpectedToken {
@@ -163,42 +167,21 @@ impl Parser {
             })?,
         };
 
-        loop {
+        while self.peek_token.type_ != TokenType::Semicolon
+            && self.peek_token.type_ != TokenType::EOF
+            && self.peek_precedence() as u8 > min_precedence as u8
+        {
             let operator = self.peek_token.type_.clone();
-            if (Precedence::for_token(&operator) as u8) < (min_precedence as u8) {
-                break;
-            }
             self.next_token();
-
-            let right = match operator {
-                TokenType::Plus
-                | TokenType::Minus
-                | TokenType::Asterisk
-                | TokenType::Slash
-                | TokenType::Gt
-                | TokenType::Lt
-                | TokenType::Eq
-                | TokenType::NotEq => {
-                    self.next_token();
-                    self.parse_expression(Precedence::for_token(&operator))?
-                }
-                _ => break,
-            };
-
-            left = Expression::Infix {
-                token: cur.clone(),
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
+            left = self.parse_infix(Box::new(left))?
         }
         Ok(left)
     }
 
-    fn parse_identifier(&self) -> ParseResult<Expression> {
-        Ok(Expression::Identifier {
+    fn parse_identifier(&self) -> Expression {
+        Expression::Identifier {
             token: self.cur_token.clone(),
-        })
+        }
     }
 
     fn parse_integer_literal(&self) -> ParseResult<Expression> {
@@ -216,6 +199,35 @@ impl Parser {
             token: prefix_token,
             right: Box::new(self.parse_expression(Prefix)?),
         })
+    }
+
+    fn parse_infix(&mut self, left: Box<Expression>) -> ParseResult<Expression> {
+        let operator_token = self.cur_token.clone();
+        match operator_token.type_ {
+            TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Asterisk
+            | TokenType::Slash
+            | TokenType::Gt
+            | TokenType::Lt
+            | TokenType::Eq
+            | TokenType::NotEq => {
+                self.next_token();
+                Ok(Expression::Infix {
+                    token: operator_token.clone(),
+                    operator: operator_token.type_,
+                    left,
+                    right: Box::new(
+                        self.parse_expression(Precedence::for_token(&operator_token.type_))?,
+                    ),
+                })
+            }
+            _ => Err(ParseError::UnexpectedToken {
+                // TODO: this is a placeholder
+                expected: TokenType::Plus,
+                found: operator_token.type_,
+            })?,
+        }
     }
 }
 
@@ -455,6 +467,72 @@ mod tests {
             test_int_literal_expression(left, t.left_value);
             assert_eq!(operator.to_string(), t.operator);
             test_int_literal_expression(left, t.right_value);
+        }
+    }
+
+    #[test]
+    fn operator_precedence_parsing() {
+        struct Test {
+            input: String,
+            expected: String,
+        }
+        let tests = vec![
+            Test {
+                input: "-a * b".to_owned(),
+                expected: "((-a) * b);".to_owned(),
+            },
+            Test {
+                input: "!-a".to_owned(),
+                expected: "(!(-a));".to_owned(),
+            },
+            Test {
+                input: "a + b + c".to_owned(),
+                expected: "((a + b) + c);".to_owned(),
+            },
+            Test {
+                input: "a + b - c".to_owned(),
+                expected: "((a + b) - c);".to_owned(),
+            },
+            Test {
+                input: "a * b * c".to_owned(),
+                expected: "((a * b) * c);".to_owned(),
+            },
+            Test {
+                input: "a * b / c".to_owned(),
+                expected: "((a * b) / c);".to_owned(),
+            },
+            Test {
+                input: "a + b / c".to_owned(),
+                expected: "(a + (b / c));".to_owned(),
+            },
+            Test {
+                input: "a + b * c + d / e - f".to_owned(),
+                expected: "(((a + (b * c)) + (d / e)) - f);".to_owned(),
+            },
+            Test {
+                input: "3 + 4; -5 * 5".to_owned(),
+                expected: "(3 + 4); ((-5) * 5);".to_owned(),
+            },
+            Test {
+                input: "5 > 4 == 3 < 4".to_owned(),
+                expected: "((5 > 4) == (3 < 4));".to_owned(),
+            },
+            Test {
+                input: "5 < 4 != 3 > 4".to_owned(),
+                expected: "((5 < 4) != (3 > 4));".to_owned(),
+            },
+            Test {
+                input: "3 + 4 * 5 == 3 * 1 + 4 * 5".to_owned(),
+                expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));".to_owned(),
+            },
+        ];
+
+        for t in tests {
+            let l = Lexer::new(t.input.into_bytes());
+            let mut parser = Parser::new(l);
+            let prog = parser.parse_program();
+            assert_eq!(parser.errors.len(), 0);
+            assert_eq!(prog.to_string(), t.expected);
         }
     }
 
