@@ -1,36 +1,5 @@
 use std::fmt;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum TokenType {
-    Illegal,
-    EOF,
-    Ident,
-    Int,
-    Assign,
-    Eq,
-    NotEq,
-    Plus,
-    Minus,
-    Bang,
-    Asterisk,
-    Slash,
-    Lt,
-    Gt,
-    Comma,
-    Semicolon,
-    LeftParen,
-    RightParen,
-    LeftBrace,
-    RightBrace,
-    Function,
-    Let,
-    True,
-    False,
-    If,
-    Else,
-    Return,
-}
-
 const CHAR_EOF: char = '\0';
 const CHAR_ASSIGN: char = '=';
 const CHAR_PLUS: char = '+';
@@ -55,45 +24,88 @@ const KEYWORD_IF: &str = "if";
 const KEYWORD_ELSE: &str = "else";
 const KEYWORD_RETURN: &str = "return";
 
-impl fmt::Display for TokenType {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum TokenKind {
+    Illegal,
+    EOF,
+    Ident(String),
+    Int(String),
+    Assign,
+    Eq,
+    NotEq,
+    Plus,
+    Minus,
+    Bang,
+    Asterisk,
+    Slash,
+    Lt,
+    Gt,
+    Comma,
+    Semicolon,
+    LeftParen,
+    RightParen,
+    LeftBrace,
+    RightBrace,
+    Function,
+    Let,
+    True,
+    False,
+    If,
+    Else,
+    Return,
+}
+impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let str = match self {
-            TokenType::EOF => CHAR_EOF.to_string(),
-            TokenType::Assign => CHAR_ASSIGN.to_string(),
-            TokenType::Eq => format!("{}{}", CHAR_ASSIGN, CHAR_ASSIGN),
-            TokenType::NotEq => format!("{}{}", CHAR_BANG, CHAR_ASSIGN),
-            TokenType::Plus => CHAR_PLUS.to_string(),
-            TokenType::Minus => CHAR_MINUS.to_string(),
-            TokenType::Bang => CHAR_BANG.to_string(),
-            TokenType::Asterisk => CHAR_ASTERISK.to_string(),
-            TokenType::Slash => CHAR_SLASH.to_string(),
-            TokenType::Lt => CHAR_LT.to_string(),
-            TokenType::Gt => CHAR_GT.to_string(),
-            TokenType::Comma => CHAR_COMMA.to_string(),
-            TokenType::Semicolon => CHAR_SEMICOLON.to_string(),
-            TokenType::LeftParen => CHAR_LEFTPAREN.to_string(),
-            TokenType::RightParen => CHAR_RIGHTPAREN.to_string(),
-            TokenType::LeftBrace => CHAR_LEFTBRACE.to_string(),
-            TokenType::RightBrace => CHAR_RIGHTBRACE.to_string(),
-            TokenType::Function => KEYWORD_FN.to_string(),
-            TokenType::Let => KEYWORD_LET.to_string(),
-            TokenType::True => KEYWORD_TRUE.to_string(),
-            TokenType::False => KEYWORD_FALSE.to_string(),
-            TokenType::If => KEYWORD_IF.to_string(),
-            TokenType::Else => KEYWORD_ELSE.to_string(),
-            TokenType::Return => KEYWORD_RETURN.to_string(),
-            TokenType::Int => "int".to_string(),
-            TokenType::Ident => "ident".to_string(),
-            _ => panic!("display not yet implemented for token type {:?}", self),
-        };
-        write!(f, "{}", str)
+        write!(
+            f,
+            "{}",
+            match self {
+                TokenKind::EOF => CHAR_EOF.to_string(),
+                TokenKind::Ident(literal) | TokenKind::Int(literal) => literal.clone(),
+                TokenKind::Assign => CHAR_ASSIGN.to_string(),
+                TokenKind::Eq => format!("{}{}", CHAR_ASSIGN, CHAR_ASSIGN),
+                TokenKind::NotEq => format!("{}{}", CHAR_BANG, CHAR_ASSIGN),
+                TokenKind::Plus => CHAR_PLUS.to_string(),
+                TokenKind::Minus => CHAR_MINUS.to_string(),
+                TokenKind::Bang => CHAR_BANG.to_string(),
+                TokenKind::Asterisk => CHAR_ASTERISK.to_string(),
+                TokenKind::Slash => CHAR_SLASH.to_string(),
+                TokenKind::Lt => CHAR_LT.to_string(),
+                TokenKind::Gt => CHAR_GT.to_string(),
+                TokenKind::Comma => CHAR_COMMA.to_string(),
+                TokenKind::Semicolon => CHAR_SEMICOLON.to_string(),
+                TokenKind::LeftParen => CHAR_LEFTPAREN.to_string(),
+                TokenKind::RightParen => CHAR_RIGHTPAREN.to_string(),
+                TokenKind::LeftBrace => CHAR_LEFTBRACE.to_string(),
+                TokenKind::RightBrace => CHAR_RIGHTBRACE.to_string(),
+                TokenKind::Function => KEYWORD_FN.to_string(),
+                TokenKind::Let => KEYWORD_LET.to_string(),
+                TokenKind::True => KEYWORD_TRUE.to_string(),
+                TokenKind::False => KEYWORD_FALSE.to_string(),
+                TokenKind::If => KEYWORD_IF.to_string(),
+                TokenKind::Else => KEYWORD_ELSE.to_string(),
+                TokenKind::Return => KEYWORD_RETURN.to_string(),
+                _ => panic!("display not yet implemented for token kind {:?}", self),
+            }
+        )
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct Token {
-    pub type_: TokenType,
-    pub literal: String,
+    pub kind: TokenKind,
+    // TODO: add line and column numbers
+}
+impl Token {
+    // Returns true if the token is the specified kind (ignoring any associated data), false otherwise
+    pub fn is_kind(&self, kind: &TokenKind) -> bool {
+        std::mem::discriminant(&self.kind) == std::mem::discriminant(&kind)
+    }
+}
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.kind.fmt(f)
+    }
 }
 
 pub struct Lexer {
@@ -120,99 +132,47 @@ impl Lexer {
             self.consume_whitespace();
         }
 
-        let cs = self.c.to_string();
-        match self.c {
-            CHAR_EOF => Token {
-                type_: TokenType::EOF,
-                literal: cs,
-            },
+        let kind = match self.c {
+            CHAR_EOF => TokenKind::EOF,
             CHAR_ASSIGN => match self.lookahead() {
                 CHAR_ASSIGN => {
                     self.read_char();
-                    Token {
-                        type_: TokenType::Eq,
-                        literal: TokenType::Eq.to_string(),
-                    }
+                    TokenKind::Eq
                 }
-                _ => Token {
-                    type_: TokenType::Assign,
-                    literal: cs,
-                },
+                _ => TokenKind::Assign,
             },
-            CHAR_PLUS => Token {
-                type_: TokenType::Plus,
-                literal: cs,
-            },
-            CHAR_MINUS => Token {
-                type_: TokenType::Minus,
-                literal: cs,
-            },
+            CHAR_PLUS => TokenKind::Plus,
+            CHAR_MINUS => TokenKind::Minus,
             CHAR_BANG => match self.lookahead() {
                 '=' => {
                     self.read_char();
-                    Token {
-                        type_: TokenType::NotEq,
-                        literal: TokenType::NotEq.to_string(),
-                    }
+                    TokenKind::NotEq
                 }
-                _ => Token {
-                    type_: TokenType::Bang,
-                    literal: cs,
-                },
+                _ => TokenKind::Bang,
             },
-            CHAR_ASTERISK => Token {
-                type_: TokenType::Asterisk,
-                literal: cs,
-            },
-            CHAR_SLASH => Token {
-                type_: TokenType::Slash,
-                literal: cs,
-            },
-            CHAR_LT => Token {
-                type_: TokenType::Lt,
-                literal: cs,
-            },
-            CHAR_GT => Token {
-                type_: TokenType::Gt,
-                literal: cs,
-            },
-            CHAR_COMMA => Token {
-                type_: TokenType::Comma,
-                literal: cs,
-            },
-            CHAR_SEMICOLON => Token {
-                type_: TokenType::Semicolon,
-                literal: cs,
-            },
-            CHAR_LEFTPAREN => Token {
-                type_: TokenType::LeftParen,
-                literal: cs,
-            },
-            CHAR_RIGHTPAREN => Token {
-                type_: TokenType::RightParen,
-                literal: cs,
-            },
-            CHAR_LEFTBRACE => Token {
-                type_: TokenType::LeftBrace,
-                literal: cs,
-            },
-            CHAR_RIGHTBRACE => Token {
-                type_: TokenType::RightBrace,
-                literal: cs,
-            },
+            CHAR_ASTERISK => TokenKind::Asterisk,
+            CHAR_SLASH => TokenKind::Slash,
+            CHAR_LT => TokenKind::Lt,
+            CHAR_GT => TokenKind::Gt,
+            CHAR_COMMA => TokenKind::Comma,
+            CHAR_SEMICOLON => TokenKind::Semicolon,
+            CHAR_LEFTPAREN => TokenKind::LeftParen,
+            CHAR_RIGHTPAREN => TokenKind::RightParen,
+            CHAR_LEFTBRACE => TokenKind::LeftBrace,
+            CHAR_RIGHTBRACE => TokenKind::RightBrace,
             _ => {
-                if self.c.is_alphabetic() || self.c == '_' {
+                return if self.c.is_alphabetic() || self.c == '_' {
                     self.read_ident()
                 } else if self.c.is_numeric() {
                     self.read_num()
                 } else {
                     Token {
-                        type_: TokenType::Illegal,
-                        literal: String::from("\0"),
+                        kind: TokenKind::Illegal,
                     }
                 }
             }
-        }
+        };
+        Token { kind }
     }
 
     fn read_char(&mut self) {
@@ -247,19 +207,17 @@ impl Lexer {
             self.read_char();
         }
         let ident = std::str::from_utf8(&self.input[start..self.next]).unwrap();
-        Token {
-            type_: match ident {
-                KEYWORD_LET => TokenType::Let,
-                KEYWORD_FN => TokenType::Function,
-                KEYWORD_TRUE => TokenType::True,
-                KEYWORD_FALSE => TokenType::False,
-                KEYWORD_IF => TokenType::If,
-                KEYWORD_ELSE => TokenType::Else,
-                KEYWORD_RETURN => TokenType::Return,
-                _ => TokenType::Ident,
-            },
-            literal: ident.to_string(),
-        }
+        let kind = match ident {
+            KEYWORD_LET => TokenKind::Let,
+            KEYWORD_FN => TokenKind::Function,
+            KEYWORD_TRUE => TokenKind::True,
+            KEYWORD_FALSE => TokenKind::False,
+            KEYWORD_IF => TokenKind::If,
+            KEYWORD_ELSE => TokenKind::Else,
+            KEYWORD_RETURN => TokenKind::Return,
+            _ => TokenKind::Ident(ident.to_string()),
+        };
+        Token { kind }
     }
 
     fn read_num(&mut self) -> Token {
@@ -272,14 +230,12 @@ impl Lexer {
             // consume the rest of the illegal token
             self.read_ident();
             return Token {
-                type_: TokenType::Illegal,
-                literal: "\0".to_string(),
+                kind: TokenKind::Illegal,
             };
         }
         let num = std::str::from_utf8(&self.input[start..self.next]).unwrap();
         Token {
-            type_: TokenType::Int,
-            literal: num.to_string(),
+            kind: TokenKind::Int(num.to_string()),
         }
     }
 
@@ -318,305 +274,90 @@ mod tests {
                 .as_bytes()
                 .to_vec(),
         );
-        let expected_tokens = vec![
-            Token {
-                type_: TokenType::Let,
-                literal: TokenType::Let.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "five".to_string(),
-            },
-            Token {
-                type_: TokenType::Assign,
-                literal: TokenType::Assign.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "5".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Let,
-                literal: TokenType::Let.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "ten".to_string(),
-            },
-            Token {
-                type_: TokenType::Assign,
-                literal: TokenType::Assign.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Let,
-                literal: TokenType::Let.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "add".to_string(),
-            },
-            Token {
-                type_: TokenType::Assign,
-                literal: TokenType::Assign.to_string(),
-            },
-            Token {
-                type_: TokenType::Function,
-                literal: TokenType::Function.to_string(),
-            },
-            Token {
-                type_: TokenType::LeftParen,
-                literal: TokenType::LeftParen.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "x".to_string(),
-            },
-            Token {
-                type_: TokenType::Comma,
-                literal: TokenType::Comma.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "y".to_string(),
-            },
-            Token {
-                type_: TokenType::RightParen,
-                literal: TokenType::RightParen.to_string(),
-            },
-            Token {
-                type_: TokenType::LeftBrace,
-                literal: TokenType::LeftBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "x".to_string(),
-            },
-            Token {
-                type_: TokenType::Plus,
-                literal: TokenType::Plus.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "y".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::RightBrace,
-                literal: TokenType::RightBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Let,
-                literal: TokenType::Let.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "result".to_string(),
-            },
-            Token {
-                type_: TokenType::Assign,
-                literal: TokenType::Assign.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "add".to_string(),
-            },
-            Token {
-                type_: TokenType::LeftParen,
-                literal: TokenType::LeftParen.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "five".to_string(),
-            },
-            Token {
-                type_: TokenType::Comma,
-                literal: TokenType::Comma.to_string(),
-            },
-            Token {
-                type_: TokenType::Ident,
-                literal: "ten".to_string(),
-            },
-            Token {
-                type_: TokenType::RightParen,
-                literal: TokenType::RightParen.to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Bang,
-                literal: TokenType::Bang.to_string(),
-            },
-            Token {
-                type_: TokenType::Minus,
-                literal: TokenType::Minus.to_string(),
-            },
-            Token {
-                type_: TokenType::Slash,
-                literal: TokenType::Slash.to_string(),
-            },
-            Token {
-                type_: TokenType::Asterisk,
-                literal: TokenType::Asterisk.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "5".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "5".to_string(),
-            },
-            Token {
-                type_: TokenType::Lt,
-                literal: TokenType::Lt.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::Gt,
-                literal: TokenType::Gt.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "5".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::If,
-                literal: TokenType::If.to_string(),
-            },
-            Token {
-                type_: TokenType::LeftParen,
-                literal: TokenType::LeftParen.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "5".to_string(),
-            },
-            Token {
-                type_: TokenType::Lt,
-                literal: TokenType::Lt.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::RightParen,
-                literal: TokenType::RightParen.to_string(),
-            },
-            Token {
-                type_: TokenType::LeftBrace,
-                literal: TokenType::LeftBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Return,
-                literal: TokenType::Return.to_string(),
-            },
-            Token {
-                type_: TokenType::True,
-                literal: TokenType::True.to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::RightBrace,
-                literal: TokenType::RightBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Else,
-                literal: TokenType::Else.to_string(),
-            },
-            Token {
-                type_: TokenType::LeftBrace,
-                literal: TokenType::LeftBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Return,
-                literal: TokenType::Return.to_string(),
-            },
-            Token {
-                type_: TokenType::False,
-                literal: TokenType::False.to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::RightBrace,
-                literal: TokenType::RightBrace.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::Eq,
-                literal: TokenType::Eq.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "10".to_string(),
-            },
-            Token {
-                type_: TokenType::NotEq,
-                literal: TokenType::NotEq.to_string(),
-            },
-            Token {
-                type_: TokenType::Int,
-                literal: "9".to_string(),
-            },
-            Token {
-                type_: TokenType::Semicolon,
-                literal: TokenType::Semicolon.to_string(),
-            },
+        let expected_kinds = vec![
+            TokenKind::Let,
+            TokenKind::Ident("five".to_owned()),
+            TokenKind::Assign,
+            TokenKind::Int("5".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::Let,
+            TokenKind::Ident("ten".to_owned()),
+            TokenKind::Assign,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::Let,
+            TokenKind::Ident("add".to_owned()),
+            TokenKind::Assign,
+            TokenKind::Function,
+            TokenKind::LeftParen,
+            TokenKind::Ident("x".to_owned()),
+            TokenKind::Comma,
+            TokenKind::Ident("y".to_owned()),
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+            TokenKind::Ident("x".to_owned()),
+            TokenKind::Plus,
+            TokenKind::Ident("y".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::RightBrace,
+            TokenKind::Semicolon,
+            TokenKind::Let,
+            TokenKind::Ident("result".to_owned()),
+            TokenKind::Assign,
+            TokenKind::Ident("add".to_owned()),
+            TokenKind::LeftParen,
+            TokenKind::Ident("five".to_owned()),
+            TokenKind::Comma,
+            TokenKind::Ident("ten".to_owned()),
+            TokenKind::RightParen,
+            TokenKind::Semicolon,
+            TokenKind::Bang,
+            TokenKind::Minus,
+            TokenKind::Slash,
+            TokenKind::Asterisk,
+            TokenKind::Int("5".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::Int("5".to_owned()),
+            TokenKind::Lt,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::Gt,
+            TokenKind::Int("5".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::If,
+            TokenKind::LeftParen,
+            TokenKind::Int("5".to_owned()),
+            TokenKind::Lt,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::RightParen,
+            TokenKind::LeftBrace,
+            TokenKind::Return,
+            TokenKind::True,
+            TokenKind::Semicolon,
+            TokenKind::RightBrace,
+            TokenKind::Else,
+            TokenKind::LeftBrace,
+            TokenKind::Return,
+            TokenKind::False,
+            TokenKind::Semicolon,
+            TokenKind::RightBrace,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::Eq,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::Semicolon,
+            TokenKind::Int("10".to_owned()),
+            TokenKind::NotEq,
+            TokenKind::Int("9".to_owned()),
+            TokenKind::Semicolon,
         ];
 
         let mut i = 0;
         let mut token = lexer.next_token();
-        while token.type_ != TokenType::EOF {
-            assert_eq!(token, expected_tokens[i]);
+        while !matches!(token.kind, TokenKind::EOF) {
+            // Compare kinds, ignoring associated data (to test is_kind)
+            assert!(token.is_kind(&expected_kinds[i]));
+
+            // Compare kinds and associated data
+            assert_eq!(token.kind, expected_kinds[i]);
             i += 1;
             token = lexer.next_token();
         }

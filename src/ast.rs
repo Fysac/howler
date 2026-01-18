@@ -1,8 +1,8 @@
-use crate::token::{Token, TokenType};
+use crate::token::Token;
 use std::fmt;
 
 pub(crate) trait Node: fmt::Display {
-    fn token_literal(&self) -> &str;
+    fn token_literal(&self) -> String;
 }
 
 pub(crate) struct Program {
@@ -20,9 +20,9 @@ impl fmt::Display for Program {
     }
 }
 impl Node for Program {
-    fn token_literal(&self) -> &str {
+    fn token_literal(&self) -> String {
         match self.statements.len() {
-            0 => "",
+            0 => "".to_owned(),
             _ => self.statements[0].token_literal(),
         }
     }
@@ -49,17 +49,17 @@ impl fmt::Display for Statement {
             Statement::Let { name, value, .. } => {
                 write!(f, "{} {} = {};", self.token_literal(), name, value)
             }
-            Statement::Return { token, value } => write!(f, "{} {};", self.token_literal(), value),
+            Statement::Return { value, .. } => write!(f, "{} {};", self.token_literal(), value),
             Statement::Expression { expression, .. } => write!(f, "{};", expression),
         }
     }
 }
 impl Node for Statement {
-    fn token_literal(&self) -> &str {
+    fn token_literal(&self) -> String {
         match self {
             Statement::Let { token, .. }
             | Statement::Return { token, .. }
-            | Statement::Expression { token, .. } => &token.literal,
+            | Statement::Expression { token, .. } => token.to_string(),
         }
     }
 }
@@ -78,7 +78,7 @@ pub enum Expression {
     },
     Infix {
         token: Token,
-        operator: TokenType,
+        operator: Token,
         left: Box<Expression>,
         right: Box<Expression>,
     },
@@ -87,13 +87,10 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expression::IntLiteral { token, .. } | Expression::Identifier { token, .. } => {
-                write!(f, "{}", token.literal)
+                write!(f, "{}", token.to_string())
             }
-            Expression::Prefix {
-                token,
-                right: right,
-            } => {
-                write!(f, "({}{})", token.literal, right)
+            Expression::Prefix { token, right } => {
+                write!(f, "({}{})", token.to_string(), right)
             }
             Expression::Infix {
                 operator,
@@ -107,7 +104,7 @@ impl fmt::Display for Expression {
     }
 }
 impl Node for Expression {
-    fn token_literal(&self) -> &str {
+    fn token_literal(&self) -> String {
         todo!()
     }
 }
@@ -121,7 +118,7 @@ impl fmt::Display for Identifier {
     }
 }
 impl Node for Identifier {
-    fn token_literal(&self) -> &str {
-        self.token.literal.as_str()
+    fn token_literal(&self) -> String {
+        self.token.to_string()
     }
 }
