@@ -12,7 +12,7 @@ pub struct Parser {
 
 pub enum ParseError {
     UnexpectedToken {
-        expected: TokenKind,
+        expected: Option<TokenKind>,
         found: TokenKind,
     },
 }
@@ -29,13 +29,13 @@ enum Precedence {
     Call,
 }
 impl Precedence {
-    fn for_token(token: &Token) -> Precedence {
+    fn for_token(token: &Token) -> Option<Precedence> {
         match token.kind {
-            TokenKind::Plus | TokenKind::Minus => Sum,
-            TokenKind::Asterisk | TokenKind::Slash => Product,
-            TokenKind::Gt | TokenKind::Lt => LessGreater,
-            TokenKind::Eq | TokenKind::NotEq => Equals,
-            _ => Lowest,
+            TokenKind::Plus | TokenKind::Minus => Some(Sum),
+            TokenKind::Asterisk | TokenKind::Slash => Some(Product),
+            TokenKind::Gt | TokenKind::Lt => Some(LessGreater),
+            TokenKind::Eq | TokenKind::NotEq => Some(Equals),
+            _ => None,
         }
     }
 }
@@ -46,11 +46,16 @@ impl fmt::Display for ParseError {
             ParseError::UnexpectedToken { expected, found } => {
                 let expected_str = match expected {
                     // Don't print the literal when ident or int is expected
-                    TokenKind::Ident(_) => "ident",
-                    TokenKind::Int(_) => "int",
-                    _ => &expected.to_string(),
+                    Some(TokenKind::Ident(_)) => "ident",
+                    Some(TokenKind::Int(_)) => "int",
+
+                    // Print the literal for all other tokens
+                    Some(kind) => &kind.to_string(),
+
+                    // Omit "expected token" when several tokens were valid and this just wasn't one of them
+                    None => return write!(f, "unexpected token '{}'", found),
                 };
-                write!(f, "expected token {}, found {}", expected_str, found)
+                write!(f, "expected token {}, found '{}'", expected_str, found)
             }
             _ => todo!(),
         }
@@ -89,12 +94,12 @@ impl Parser {
             return Ok(());
         }
         Err(ParseError::UnexpectedToken {
-            expected: kind,
+            expected: Some(kind),
             found: self.peek_token.kind.clone(),
         })
     }
 
-    fn peek_precedence(&self) -> Precedence {
+    fn peek_precedence(&self) -> Option<Precedence> {
         Precedence::for_token(&self.peek_token)
     }
 
@@ -174,22 +179,35 @@ impl Parser {
             TokenKind::Int(literal) => self.parse_integer_literal(&literal)?,
             TokenKind::Bang | TokenKind::Minus => self.parse_prefix()?,
             _ => Err(ParseError::UnexpectedToken {
-                expected: TokenKind::Int("_".to_owned()),
+                expected: None,
                 found: cur.kind,
             })?,
         };
 
-        while !self.peek_token_is_kind(TokenKind::Semicolon)
-            && !self.peek_token_is_kind(TokenKind::EOF)
-            // TODO: precedence for unknown operators should return an error instead of skipping over the loop and returning left
-            // i.e., this is wrong:
-            // >> let x = 1 # 1;
-            // let x = 1;
-            && self.peek_precedence() as u8 > min_precedence as u8
-        {
-            self.next_token();
-            left = self.parse_infix(Box::new(left))?
+        loop {
+            match self.peek_precedence() {
+                Some(p) if p as u8 > min_precedence as u8 => {
+                    self.next_token();
+                    left = self.parse_infix(Box::new(left))?
+                }
+                Some(_) => break,
+                None => {
+                    // End of expression
+                    if self.peek_token_is_kind(TokenKind::Semicolon)
+                        || self.peek_token_is_kind(TokenKind::EOF)
+                    {
+                        break;
+                    }
+
+                    // Next token not valid in expression
+                    return Err(ParseError::UnexpectedToken {
+                        expected: None,
+                        found: self.peek_token.kind.clone(),
+                    });
+                }
+            }
         }
+
         Ok(left)
     }
 
@@ -218,6 +236,10 @@ impl Parser {
 
     fn parse_infix(&mut self, left: Box<Expression>) -> ParseResult<Expression> {
         let operator_token = self.cur_token.clone();
+        let Some(precedence) = Precedence::for_token(&operator_token) else {
+            panic!("no precedence for current token (we shouldn't ever get here)");
+        };
+
         match operator_token.kind {
             TokenKind::Plus
             | TokenKind::Minus
@@ -232,14 +254,10 @@ impl Parser {
                     token: operator_token.clone(),
                     operator: operator_token.clone(),
                     left,
-                    right: Box::new(self.parse_expression(Precedence::for_token(&operator_token))?),
+                    right: Box::new(self.parse_expression(precedence)?),
                 })
             }
-            _ => Err(ParseError::UnexpectedToken {
-                // TODO: this is a placeholder
-                expected: TokenKind::Plus,
-                found: operator_token.kind,
-            })?,
+            _ => panic!("current token not a valid operator (we shouldn't ever get here)"),
         }
     }
 }
@@ -295,9 +313,9 @@ mod tests {
         assert_eq!(prog.statements.len(), 0);
 
         let expected_errors = vec![
-            "expected token =, found 5",
-            "expected token ident, found =",
-            "expected token ident, found 838383",
+            "expected token =, found '5'",
+            "expected token ident, found '='",
+            "expected token ident, found '838383'",
         ];
         assert_eq!(parser.errors.len(), expected_errors.iter().len());
         for (i, e) in parser.errors.iter().enumerate() {
@@ -398,14 +416,14 @@ mod tests {
         }
     }
 
+    struct InfixTest {
+        input: String,
+        left_value: i64,
+        operator: String,
+        right_value: i64,
+    }
     #[test]
     fn test_infix_expressions() {
-        struct InfixTest {
-            input: String,
-            left_value: i64,
-            operator: String,
-            right_value: i64,
-        }
         let tests = vec![
             InfixTest {
                 input: "5 + 5".to_owned(),
@@ -484,7 +502,52 @@ mod tests {
     }
 
     #[test]
-    fn operator_precedence_parsing() {
+    fn test_invalid_infix_expressions() {
+        let tests = vec![
+            InfixTest {
+                input: "5 # 5".to_owned(),
+                left_value: 5,
+                operator: "#".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 $ 5".to_owned(),
+                left_value: 5,
+                operator: "$".to_owned(),
+                right_value: 5,
+            },
+            InfixTest {
+                input: "5 @ 5".to_owned(),
+                left_value: 5,
+                operator: "@".to_owned(),
+                right_value: 5,
+            },
+        ];
+
+        let expected_errors = vec![
+            "unexpected token '#'",
+            "unexpected token '$'",
+            "unexpected token '@'",
+        ];
+
+        assert_eq!(tests.len(), expected_errors.len());
+
+        let mut i = 0;
+        for t in tests {
+            let l = Lexer::new(t.input.into_bytes());
+            let mut parser = Parser::new(l);
+            let prog = parser.parse_program();
+
+            assert_eq!(parser.errors.len(), 1);
+            assert_eq!(prog.statements.len(), 0);
+            assert_eq!(parser.errors[0].to_string(), expected_errors[i]);
+
+            i += 1;
+        }
+    }
+
+    #[test]
+    fn test_operator_precedence_parsing() {
         struct Test {
             input: String,
             expected: String,

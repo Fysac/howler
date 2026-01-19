@@ -26,7 +26,7 @@ const KEYWORD_RETURN: &str = "return";
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenKind {
-    Illegal,
+    Illegal(String),
     EOF,
     Ident(String),
     Int(String),
@@ -61,7 +61,9 @@ impl fmt::Display for TokenKind {
             "{}",
             match self {
                 TokenKind::EOF => CHAR_EOF.to_string(),
-                TokenKind::Ident(literal) | TokenKind::Int(literal) => literal.clone(),
+                TokenKind::Ident(literal)
+                | TokenKind::Int(literal)
+                | TokenKind::Illegal(literal) => literal.clone(),
                 TokenKind::Assign => CHAR_ASSIGN.to_string(),
                 TokenKind::Eq => format!("{}{}", CHAR_ASSIGN, CHAR_ASSIGN),
                 TokenKind::NotEq => format!("{}{}", CHAR_BANG, CHAR_ASSIGN),
@@ -85,7 +87,6 @@ impl fmt::Display for TokenKind {
                 TokenKind::If => KEYWORD_IF.to_string(),
                 TokenKind::Else => KEYWORD_ELSE.to_string(),
                 TokenKind::Return => KEYWORD_RETURN.to_string(),
-                _ => panic!("display not yet implemented for token kind {:?}", self),
             }
         )
     }
@@ -167,7 +168,7 @@ impl Lexer {
                     self.read_num()
                 } else {
                     Token {
-                        kind: TokenKind::Illegal,
+                        kind: TokenKind::Illegal(self.c.to_string()),
                     }
                 }
             }
@@ -230,7 +231,7 @@ impl Lexer {
             // consume the rest of the illegal token
             self.read_ident();
             return Token {
-                kind: TokenKind::Illegal,
+                kind: TokenKind::Illegal(self.lookahead().to_string()),
             };
         }
         let num = std::str::from_utf8(&self.input[start..self.next]).unwrap();
