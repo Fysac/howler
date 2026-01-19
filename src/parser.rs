@@ -1,5 +1,7 @@
 use crate::ast::*;
+use crate::parser::ParseError::*;
 use crate::parser::Precedence::*;
+use crate::token::TokenKind::*;
 use crate::token::*;
 use std::fmt;
 
@@ -30,32 +32,39 @@ enum Precedence {
 }
 impl Precedence {
     fn for_token(token: &Token) -> Option<Precedence> {
-        match token.kind {
-            TokenKind::Plus | TokenKind::Minus => Some(Sum),
-            TokenKind::Asterisk | TokenKind::Slash => Some(Product),
-            TokenKind::Gt | TokenKind::Lt => Some(LessGreater),
-            TokenKind::Eq | TokenKind::NotEq => Some(Equals),
-            _ => None,
-        }
+        let p = match token.kind {
+            Plus | Minus => Sum,
+            Asterisk | Slash => Product,
+            Gt | Lt => LessGreater,
+            Eq | NotEq => Equals,
+            _ => return None,
+        };
+        Some(p)
     }
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParseError::UnexpectedToken { expected, found } => {
+            UnexpectedToken { expected, found } => {
                 let expected_str = match expected {
                     // Don't print the literal when ident or int is expected
-                    Some(TokenKind::Ident(_)) => "ident",
-                    Some(TokenKind::Int(_)) => "int",
+                    Some(Ident(_)) => "ident",
+                    Some(Int(_)) => "int",
 
-                    // Print the literal for all other tokens
-                    Some(kind) => &kind.to_string(),
+                    // Print the expected literal in quotes for all other tokens
+                    Some(kind) => &format!("token '{}'", kind.to_string()),
 
-                    // Omit "expected token" when several tokens were valid and this just wasn't one of them
-                    None => return write!(f, "unexpected token '{}'", found),
+                    // Omit expected part when several tokens were valid and `found` just wasn't one of them
+                    None => {
+                        return if *found == EOF {
+                            write!(f, "unexpected end of file")
+                        } else {
+                            write!(f, "unexpected token '{}'", found.to_string())
+                        };
+                    }
                 };
-                write!(f, "expected token {}, found '{}'", expected_str, found)
+                write!(f, "expected {}, found '{}'", expected_str, found)
             }
             _ => todo!(),
         }
@@ -93,7 +102,7 @@ impl Parser {
             self.next_token();
             return Ok(());
         }
-        Err(ParseError::UnexpectedToken {
+        Err(UnexpectedToken {
             expected: Some(kind),
             found: self.peek_token.kind.clone(),
         })
@@ -105,54 +114,62 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Program {
         let mut statements: Vec<Statement> = vec![];
-        while !self.cur_token_is_kind(TokenKind::EOF) {
+        while !self.cur_token_is_kind(EOF) {
+            // Skip over empty statements
+            while self.cur_token_is_kind(Semicolon) {
+                self.next_token()
+            }
+            if self.cur_token_is_kind(TokenKind::EOF) {
+                break;
+            }
+
             match self.parse_statement() {
                 Ok(s) => statements.push(s),
                 Err(e) => {
                     self.errors.push(e);
+
+                    while !self.cur_token_is_kind(Semicolon) && !self.cur_token_is_kind(EOF) {
+                        self.next_token()
+                    }
                 }
             }
-            // Temporary: skip to first semicolon
-            while !self.cur_token_is_kind(TokenKind::Semicolon)
-                && !self.cur_token_is_kind(TokenKind::EOF)
-            {
-                self.next_token()
-            }
-            // Skip over consecutive semicolons
-            // TODO: revisit this
-            while self.cur_token_is_kind(TokenKind::Semicolon)
-                && !self.cur_token_is_kind(TokenKind::EOF)
-            {
-                self.next_token()
-            }
+            self.next_token();
         }
         Program { statements }
     }
 
     fn parse_statement(&mut self) -> ParseResult<Statement> {
-        match self.cur_token.kind {
-            TokenKind::Let => self.parse_let_statement(),
-            TokenKind::Return => self.parse_return_statement(),
-            _ => self.parse_expression_statement(),
+        let statement = match self.cur_token.kind {
+            Let => self.parse_let_statement()?,
+            Return => self.parse_return_statement()?,
+            _ => self.parse_expression_statement()?,
+        };
+
+        if !self.peek_token_is_kind(Semicolon) && !self.peek_token_is_kind(EOF) {
+            return Err(UnexpectedToken {
+                expected: Some(Semicolon),
+                found: self.peek_token.kind.clone(),
+            });
         }
+        Ok(statement)
     }
 
     fn parse_let_statement(&mut self) -> ParseResult<Statement> {
         let let_token = self.cur_token.clone();
-        self.expect_peek_kind(TokenKind::Ident("_".to_owned()))?;
+        self.expect_peek_kind(Ident("_".to_owned()))?;
 
         let ident = Identifier {
             token: self.cur_token.clone(),
         };
 
-        self.expect_peek_kind(TokenKind::Assign)?;
+        self.expect_peek_kind(Assign)?;
         // Current token is now start of expression
         self.next_token();
 
         Ok(Statement::Let {
             token: let_token,
             name: ident,
-            value: self.parse_expression(Precedence::Lowest)?,
+            value: self.parse_expression(Lowest)?,
         })
     }
 
@@ -161,24 +178,25 @@ impl Parser {
         self.next_token();
         Ok(Statement::Return {
             token: return_token,
-            value: self.parse_expression(Precedence::Lowest)?,
+            value: self.parse_expression(Lowest)?,
         })
     }
 
     fn parse_expression_statement(&mut self) -> ParseResult<Statement> {
         Ok(Statement::Expression {
             token: self.cur_token.clone(),
-            expression: self.parse_expression(Precedence::Lowest)?,
+            expression: self.parse_expression(Lowest)?,
         })
     }
 
     fn parse_expression(&mut self, min_precedence: Precedence) -> ParseResult<Expression> {
         let cur = self.cur_token.clone();
         let mut left = match cur.kind {
-            TokenKind::Ident(_) => self.parse_identifier(),
-            TokenKind::Int(literal) => self.parse_integer_literal(&literal)?,
-            TokenKind::Bang | TokenKind::Minus => self.parse_prefix()?,
-            _ => Err(ParseError::UnexpectedToken {
+            Ident(_) => self.parse_identifier(),
+            Int(literal) => self.parse_integer_literal(&literal)?,
+            Bang | Minus => self.parse_prefix()?,
+            LeftParen => self.parse_grouped_expression()?,
+            _ => Err(UnexpectedToken {
                 expected: None,
                 found: cur.kind,
             })?,
@@ -192,15 +210,16 @@ impl Parser {
                 }
                 Some(_) => break,
                 None => {
-                    // End of expression
-                    if self.peek_token_is_kind(TokenKind::Semicolon)
-                        || self.peek_token_is_kind(TokenKind::EOF)
-                    {
+                    // End of grouped expression
+                    if self.peek_token_is_kind(RightParen) {
                         break;
                     }
-
+                    // End of statement
+                    if self.peek_token_is_kind(Semicolon) || self.peek_token_is_kind(EOF) {
+                        break;
+                    }
                     // Next token not valid in expression
-                    return Err(ParseError::UnexpectedToken {
+                    return Err(UnexpectedToken {
                         expected: None,
                         found: self.peek_token.kind.clone(),
                     });
@@ -225,6 +244,17 @@ impl Parser {
         })
     }
 
+    fn parse_grouped_expression(&mut self) -> ParseResult<Expression> {
+        // Consume left parenthesis
+        self.next_token();
+
+        let expression = self.parse_expression(Lowest)?;
+
+        // Check for and consume right parenthesis
+        self.expect_peek_kind(RightParen)?;
+        Ok(expression)
+    }
+
     fn parse_prefix(&mut self) -> ParseResult<Expression> {
         let prefix_token = self.cur_token.clone();
         self.next_token();
@@ -241,14 +271,7 @@ impl Parser {
         };
 
         match operator_token.kind {
-            TokenKind::Plus
-            | TokenKind::Minus
-            | TokenKind::Asterisk
-            | TokenKind::Slash
-            | TokenKind::Gt
-            | TokenKind::Lt
-            | TokenKind::Eq
-            | TokenKind::NotEq => {
+            Plus | Minus | Asterisk | Slash | Gt | Lt | Eq | NotEq => {
                 self.next_token();
                 Ok(Expression::Infix {
                     token: operator_token.clone(),
@@ -313,9 +336,9 @@ mod tests {
         assert_eq!(prog.statements.len(), 0);
 
         let expected_errors = vec![
-            "expected token =, found '5'",
-            "expected token ident, found '='",
-            "expected token ident, found '838383'",
+            "expected token '=', found '5'",
+            "expected ident, found '='",
+            "expected ident, found '838383'",
         ];
         assert_eq!(parser.errors.len(), expected_errors.iter().len());
         for (i, e) in parser.errors.iter().enumerate() {
@@ -522,12 +545,19 @@ mod tests {
                 operator: "@".to_owned(),
                 right_value: 5,
             },
+            InfixTest {
+                input: "5 ~= 5".to_owned(),
+                left_value: 5,
+                operator: "~=".to_owned(),
+                right_value: 5,
+            },
         ];
 
         let expected_errors = vec![
             "unexpected token '#'",
             "unexpected token '$'",
             "unexpected token '@'",
+            "unexpected token '~'",
         ];
 
         assert_eq!(tests.len(), expected_errors.len());
@@ -600,6 +630,26 @@ mod tests {
             Test {
                 input: "3 + 4 * 5 == 3 * 1 + 4 * 5".to_owned(),
                 expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));".to_owned(),
+            },
+            Test {
+                input: "1 + (2 + 3) + 4".to_owned(),
+                expected: "((1 + (2 + 3)) + 4);".to_owned(),
+            },
+            Test {
+                input: "(5 + 5) * 2".to_owned(),
+                expected: "((5 + 5) * 2);".to_owned(),
+            },
+            Test {
+                input: "2 / (5 + 5)".to_owned(),
+                expected: "(2 / (5 + 5));".to_owned(),
+            },
+            Test {
+                input: "-(5 + 5)".to_owned(),
+                expected: "(-(5 + 5));".to_owned(),
+            },
+            Test {
+                input: "!(true == true)".to_owned(),
+                expected: "(!(true == true))".to_owned(),
             },
         ];
 

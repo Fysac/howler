@@ -60,7 +60,7 @@ impl fmt::Display for TokenKind {
             f,
             "{}",
             match self {
-                TokenKind::EOF => CHAR_EOF.to_string(),
+                TokenKind::EOF => "EOF".to_owned(),
                 TokenKind::Ident(literal)
                 | TokenKind::Int(literal)
                 | TokenKind::Illegal(literal) => literal.clone(),
@@ -183,7 +183,7 @@ impl Lexer {
         }
         self.c = self.input[self.next] as char;
         if self.next > 0 {
-            // only advance cur if we've already read the first char
+            // Only advance cur if we've already read the first char
             self.cur += 1;
         }
         self.next += 1;
@@ -227,8 +227,8 @@ impl Lexer {
             self.read_char();
         }
         if self.lookahead_is_ident() {
-            // bad news: identifier character following number
-            // consume the rest of the illegal token
+            // Bad news: identifier character following number
+            // Consume the rest of the illegal token
             self.read_ident();
             return Token {
                 kind: TokenKind::Illegal(
