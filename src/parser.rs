@@ -194,6 +194,7 @@ impl Parser {
         let mut left = match cur.kind {
             Ident(_) => self.parse_identifier(),
             Int(literal) => self.parse_integer_literal(&literal)?,
+            True | False => self.parse_boolean_literal(self.cur_token.kind == True)?,
             Bang | Minus => self.parse_prefix()?,
             LeftParen => self.parse_grouped_expression()?,
             _ => Err(UnexpectedToken {
@@ -239,6 +240,13 @@ impl Parser {
     fn parse_integer_literal(&self, literal: &str) -> ParseResult<Expression> {
         let value = literal.parse().unwrap();
         Ok(Expression::IntLiteral {
+            token: self.cur_token.clone(),
+            value,
+        })
+    }
+
+    fn parse_boolean_literal(&self, value: bool) -> ParseResult<Expression> {
+        Ok(Expression::BoolLiteral {
             token: self.cur_token.clone(),
             value,
         })
@@ -316,8 +324,7 @@ mod tests {
         };
         assert_eq!(token.to_string(), "let");
         assert_eq!(name.token_literal(), expected_binding.0);
-        let token = test_int_literal_expression(value, expected_binding.1.parse().unwrap());
-        assert_eq!(token.to_string(), expected_binding.1);
+        test_int_literal_expression(value, expected_binding.1.parse().unwrap());
     }
 
     #[test]
@@ -372,8 +379,7 @@ mod tests {
             panic!("expected Statement::Return");
         };
         assert_eq!(token.to_string(), "return");
-        let token = test_int_literal_expression(value, expected_value.parse().unwrap());
-        assert_eq!(token.to_string(), expected_value);
+        test_int_literal_expression(value, expected_value.parse().unwrap());
     }
 
     #[test]
@@ -401,23 +407,37 @@ mod tests {
         }
     }
 
+    enum ExpectedValue {
+        Int(i64),
+        Bool(bool),
+    }
     #[test]
     fn test_prefix_expressions() {
         struct PrefixTest {
             input: String,
             operator: String,
-            int_value: i64,
+            value: ExpectedValue,
         }
         let tests = vec![
             PrefixTest {
                 input: "!5".to_owned(),
                 operator: "!".to_owned(),
-                int_value: 5,
+                value: ExpectedValue::Int(5),
             },
             PrefixTest {
                 input: "-15".to_owned(),
                 operator: "-".to_owned(),
-                int_value: 15,
+                value: ExpectedValue::Int(15),
+            },
+            PrefixTest {
+                input: "!true".to_owned(),
+                operator: "!".to_owned(),
+                value: ExpectedValue::Bool(true),
+            },
+            PrefixTest {
+                input: "!false".to_owned(),
+                operator: "!".to_owned(),
+                value: ExpectedValue::Bool(false),
             },
         ];
 
@@ -435,66 +455,93 @@ mod tests {
                 panic!("expected Expression::Prefix");
             };
             assert_eq!(token.to_string(), t.operator);
-            test_int_literal_expression(right, t.int_value);
+            match t.value {
+                ExpectedValue::Int(i) => test_int_literal_expression(right, i),
+                ExpectedValue::Bool(b) => test_bool_literal_expression(right, b),
+            };
         }
     }
 
     struct InfixTest {
         input: String,
-        left_value: i64,
+        left_value: ExpectedValue,
         operator: String,
-        right_value: i64,
+        right_value: ExpectedValue,
     }
     #[test]
     fn test_infix_expressions() {
         let tests = vec![
             InfixTest {
                 input: "5 + 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "+".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 - 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "-".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 * 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "*".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 / 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "/".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 > 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: ">".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 < 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "<".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 == 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "==".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 != 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "!=".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
+            },
+            InfixTest {
+                input: "5 != 5".to_owned(),
+                left_value: ExpectedValue::Int(5),
+                operator: "!=".to_owned(),
+                right_value: ExpectedValue::Int(5),
+            },
+            InfixTest {
+                input: "true == true".to_owned(),
+                left_value: ExpectedValue::Bool(true),
+                operator: "==".to_owned(),
+                right_value: ExpectedValue::Bool(true),
+            },
+            InfixTest {
+                input: "true != false".to_owned(),
+                left_value: ExpectedValue::Bool(true),
+                operator: "!=".to_owned(),
+                right_value: ExpectedValue::Bool(false),
+            },
+            InfixTest {
+                input: "false == false".to_owned(),
+                left_value: ExpectedValue::Bool(false),
+                operator: "==".to_owned(),
+                right_value: ExpectedValue::Bool(false),
             },
         ];
 
@@ -518,9 +565,18 @@ mod tests {
             else {
                 panic!("expected Expression::Infix");
             };
-            test_int_literal_expression(left, t.left_value);
+
+            match t.left_value {
+                ExpectedValue::Int(i) => test_int_literal_expression(left, i),
+                ExpectedValue::Bool(b) => test_bool_literal_expression(left, b),
+            };
+
             assert_eq!(operator.to_string(), t.operator);
-            test_int_literal_expression(left, t.right_value);
+
+            match t.right_value {
+                ExpectedValue::Int(i) => test_int_literal_expression(right, i),
+                ExpectedValue::Bool(b) => test_bool_literal_expression(right, b),
+            };
         }
     }
 
@@ -529,27 +585,27 @@ mod tests {
         let tests = vec![
             InfixTest {
                 input: "5 # 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "#".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 $ 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "$".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 @ 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "@".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
             InfixTest {
                 input: "5 ~= 5".to_owned(),
-                left_value: 5,
+                left_value: ExpectedValue::Int(5),
                 operator: "~=".to_owned(),
-                right_value: 5,
+                right_value: ExpectedValue::Int(5),
             },
         ];
 
@@ -648,8 +704,24 @@ mod tests {
                 expected: "(-(5 + 5));".to_owned(),
             },
             Test {
+                input: "true".to_owned(),
+                expected: "true;".to_owned(),
+            },
+            Test {
+                input: "false".to_owned(),
+                expected: "false;".to_owned(),
+            },
+            Test {
+                input: "3 > 5 == false".to_owned(),
+                expected: "((3 > 5) == false);".to_owned(),
+            },
+            Test {
+                input: "3 < 5 == true".to_owned(),
+                expected: "((3 < 5) == true);".to_owned(),
+            },
+            Test {
                 input: "!(true == true)".to_owned(),
-                expected: "(!(true == true))".to_owned(),
+                expected: "(!(true == true));".to_owned(),
             },
         ];
 
@@ -662,12 +734,20 @@ mod tests {
         }
     }
 
-    fn test_int_literal_expression(expr: &Expression, expected_value: i64) -> &Token {
+    fn test_int_literal_expression(expr: &Expression, expected_value: i64) {
         let Expression::IntLiteral { token, value } = expr else {
             panic!("expected Expression::IntLiteral");
         };
         assert_eq!(*value, expected_value);
-        token
+        assert_eq!(token.to_string(), expected_value.to_string());
+    }
+
+    fn test_bool_literal_expression(expr: &Expression, expected_value: bool) {
+        let Expression::BoolLiteral { token, value } = expr else {
+            panic!("expected Expression::BoolLiteral");
+        };
+        assert_eq!(*value, expected_value);
+        assert_eq!(token.to_string(), expected_value.to_string());
     }
 
     #[test]

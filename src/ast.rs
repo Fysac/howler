@@ -69,6 +69,10 @@ pub enum Expression {
         token: Token,
         value: i64,
     },
+    BoolLiteral {
+        token: Token,
+        value: bool,
+    },
     Identifier {
         token: Token,
     },
@@ -86,7 +90,9 @@ pub enum Expression {
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::IntLiteral { token, .. } | Expression::Identifier { token, .. } => {
+            Expression::IntLiteral { token, .. }
+            | Expression::Identifier { token, .. }
+            | Expression::BoolLiteral { token, .. } => {
                 write!(f, "{}", token.to_string())
             }
             Expression::Prefix { token, right } => {
