@@ -231,7 +231,11 @@ impl Lexer {
             // consume the rest of the illegal token
             self.read_ident();
             return Token {
-                kind: TokenKind::Illegal(self.lookahead().to_string()),
+                kind: TokenKind::Illegal(
+                    std::str::from_utf8(&self.input[start..self.next])
+                        .unwrap()
+                        .to_owned(),
+                ),
             };
         }
         let num = std::str::from_utf8(&self.input[start..self.next]).unwrap();
