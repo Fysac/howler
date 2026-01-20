@@ -10,13 +10,7 @@ pub(crate) struct Program {
 }
 impl fmt::Display for Program {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, s) in self.statements.iter().enumerate() {
-            write!(f, "{}", s)?;
-            if i < self.statements.len() - 1 {
-                write!(f, " ")?;
-            }
-        }
-        Ok(())
+        fmt_statements(f, &self.statements)
     }
 }
 impl Node for Program {
@@ -25,6 +19,20 @@ impl Node for Program {
             0 => "".to_owned(),
             _ => self.statements[0].token_literal(),
         }
+    }
+}
+
+pub struct Block {
+    pub(crate) statements: Vec<Statement>,
+}
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_statements(f, &self.statements)
+    }
+}
+impl Node for Block {
+    fn token_literal(&self) -> String {
+        todo!()
     }
 }
 
@@ -86,6 +94,12 @@ pub enum Expression {
         left: Box<Expression>,
         right: Box<Expression>,
     },
+    If {
+        token: Token,
+        condition: Box<Expression>,
+        consequence: Block,
+        alternative: Option<Block>,
+    },
 }
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -105,6 +119,22 @@ impl fmt::Display for Expression {
                 ..
             } => {
                 write!(f, "({} {} {})", left, operator, right)
+            }
+            Expression::If {
+                condition,
+                consequence,
+                alternative,
+                ..
+            } => {
+                if let Some(alternative) = alternative {
+                    write!(
+                        f,
+                        "if ({}) {{ {} }} else {{ {} }}",
+                        condition, consequence, alternative
+                    )
+                } else {
+                    write!(f, "if ({}) {{ {} }}", condition, consequence)
+                }
             }
         }
     }
@@ -127,4 +157,14 @@ impl Node for Identifier {
     fn token_literal(&self) -> String {
         self.token.to_string()
     }
+}
+
+fn fmt_statements(f: &mut fmt::Formatter<'_>, statements: &Vec<Statement>) -> fmt::Result {
+    for (i, s) in statements.iter().enumerate() {
+        write!(f, "{}", s)?;
+        if i < statements.len() - 1 {
+            write!(f, " ")?;
+        }
+    }
+    Ok(())
 }

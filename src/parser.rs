@@ -66,7 +66,6 @@ impl fmt::Display for ParseError {
                 };
                 write!(f, "expected {}, found '{}'", expected_str, found)
             }
-            _ => todo!(),
         }
     }
 }
@@ -144,13 +143,6 @@ impl Parser {
             Return => self.parse_return_statement()?,
             _ => self.parse_expression_statement()?,
         };
-
-        if !self.peek_token_is_kind(Semicolon) && !self.peek_token_is_kind(EOF) {
-            return Err(UnexpectedToken {
-                expected: Some(Semicolon),
-                found: self.peek_token.kind.clone(),
-            });
-        }
         Ok(statement)
     }
 
@@ -197,6 +189,7 @@ impl Parser {
             True | False => self.parse_boolean_literal(self.cur_token.kind == True)?,
             Bang | Minus => self.parse_prefix()?,
             LeftParen => self.parse_grouped_expression()?,
+            If => self.parse_if_expression()?,
             _ => Err(UnexpectedToken {
                 expected: None,
                 found: cur.kind,
@@ -215,6 +208,12 @@ impl Parser {
                     if self.peek_token_is_kind(RightParen) {
                         break;
                     }
+
+                    // End of block statement
+                    if self.peek_token_is_kind(RightBrace) {
+                        break;
+                    }
+
                     // End of statement
                     if self.peek_token_is_kind(Semicolon) || self.peek_token_is_kind(EOF) {
                         break;
@@ -261,6 +260,70 @@ impl Parser {
         // Check for and consume right parenthesis
         self.expect_peek_kind(RightParen)?;
         Ok(expression)
+    }
+
+    fn parse_if_expression(&mut self) -> ParseResult<Expression> {
+        let if_token = self.cur_token.clone();
+        self.expect_peek_kind(LeftParen)?;
+        self.next_token();
+        let condition = self.parse_expression(Lowest)?;
+        self.expect_peek_kind(RightParen)?;
+
+        let consequence = self.parse_block()?;
+
+        let mut alternative = None;
+        if self.peek_token_is_kind(Else) {
+            self.next_token();
+            alternative = Some(self.parse_block()?);
+        }
+
+        Ok((Expression::If {
+            token: if_token,
+            condition: Box::new(condition),
+            consequence,
+            alternative,
+        }))
+    }
+
+    // TODO: address parse_program code duplication
+    fn parse_block(&mut self) -> ParseResult<Block> {
+        self.expect_peek_kind(LeftBrace)?;
+        self.next_token();
+
+        let mut statements: Vec<Statement> = vec![];
+        while !self.cur_token_is_kind(RightBrace) && !self.cur_token_is_kind(EOF) {
+            // Skip over empty statements
+            while self.cur_token_is_kind(Semicolon) {
+                self.next_token()
+            }
+            if self.cur_token_is_kind(RightBrace) {
+                break;
+            }
+
+            match self.parse_statement() {
+                Ok(s) => statements.push(s),
+                Err(e) => {
+                    self.errors.push(e);
+
+                    while !self.cur_token_is_kind(Semicolon)
+                        && !self.peek_token_is_kind(RightBrace)
+                        && !self.cur_token_is_kind(EOF)
+                    {
+                        self.next_token()
+                    }
+                }
+            }
+            self.next_token();
+        }
+
+        if !self.cur_token_is_kind(RightBrace) {
+            return Err(UnexpectedToken {
+                expected: Some(RightBrace),
+                found: self.cur_token.kind.clone(),
+            });
+        }
+
+        Ok(Block { statements })
     }
 
     fn parse_prefix(&mut self) -> ParseResult<Expression> {
@@ -732,6 +795,151 @@ mod tests {
             assert_eq!(parser.errors.len(), 0);
             assert_eq!(prog.to_string(), t.expected);
         }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "
+        if (x < y) { x };
+        "
+        .as_bytes()
+        .to_vec();
+
+        let l = Lexer::new(input);
+        let mut parser = Parser::new(l);
+        let prog = parser.parse_program();
+
+        assert_eq!(parser.errors.len(), 0);
+        assert_eq!(prog.statements.len(), 1);
+
+        let Statement::Expression { token, expression } = &prog.statements[0] else {
+            panic!("expected Statement::Expression");
+        };
+        assert_eq!(token.kind, If);
+
+        let Expression::If {
+            token,
+            condition,
+            consequence,
+            alternative,
+        } = expression
+        else {
+            panic!("expected Expression::If");
+        };
+        assert_eq!(token.kind, If);
+
+        let Expression::Infix {
+            token,
+            operator,
+            left,
+            right,
+        } = &**condition
+        else {
+            panic!("expected Expression::Infix");
+        };
+        assert_eq!(token.kind, Lt);
+        assert_eq!(operator.kind, Lt);
+
+        let Expression::Identifier { token } = &**left else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        let Expression::Identifier { token } = &**right else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "y");
+
+        assert_eq!(consequence.statements.len(), 1);
+        let Statement::Expression { token, expression } = &consequence.statements[0] else {
+            panic!("expected Statement::Expression");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        let Expression::Identifier { token } = expression else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        assert!(matches!(alternative, None));
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        let input = "
+        if (x < y) { x } else { y }
+        "
+        .as_bytes()
+        .to_vec();
+
+        let l = Lexer::new(input);
+        let mut parser = Parser::new(l);
+        let prog = parser.parse_program();
+
+        assert_eq!(parser.errors.len(), 0);
+        assert_eq!(prog.statements.len(), 1);
+
+        let Statement::Expression { token, expression } = &prog.statements[0] else {
+            panic!("expected Statement::Expression");
+        };
+        assert_eq!(token.kind, If);
+
+        let Expression::If {
+            token,
+            condition,
+            consequence,
+            alternative,
+        } = expression
+        else {
+            panic!("expected Expression::If");
+        };
+        assert_eq!(token.kind, If);
+
+        let Expression::Infix {
+            token,
+            operator,
+            left,
+            right,
+        } = &**condition
+        else {
+            panic!("expected Expression::Infix");
+        };
+        assert_eq!(token.kind, Lt);
+        assert_eq!(operator.kind, Lt);
+
+        let Expression::Identifier { token } = &**left else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        let Expression::Identifier { token } = &**right else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "y");
+
+        assert_eq!(consequence.statements.len(), 1);
+        let Statement::Expression { token, expression } = &consequence.statements[0] else {
+            panic!("expected Statement::Expression");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        let Expression::Identifier { token } = expression else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "x");
+
+        let Some(alternative) = alternative else {
+            panic!("expected Some(BlockStatement)");
+        };
+        let Statement::Expression { token, expression } = &alternative.statements[0] else {
+            panic!("expected Statement::Expression");
+        };
+        assert_eq!(token.to_string(), "y");
+
+        let Expression::Identifier { token } = expression else {
+            panic!("expected Expression::Identifier");
+        };
+        assert_eq!(token.to_string(), "y");
     }
 
     fn test_int_literal_expression(expr: &Expression, expected_value: i64) {
