@@ -1,5 +1,6 @@
 use crate::token::Token;
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 pub(crate) trait Node: fmt::Display {
     fn token_literal(&self) -> String;
@@ -100,6 +101,11 @@ pub enum Expression {
         consequence: Block,
         alternative: Option<Block>,
     },
+    FunctionLiteral {
+        token: Token,
+        parameters: ParameterList,
+        body: Block,
+    },
 }
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -136,6 +142,13 @@ impl fmt::Display for Expression {
                     write!(f, "if ({}) {{ {} }}", condition, consequence)
                 }
             }
+            Expression::FunctionLiteral {
+                token,
+                parameters,
+                body,
+            } => {
+                write!(f, "{}({}) {{ {} }}", token, parameters, body)
+            }
         }
     }
 }
@@ -145,6 +158,20 @@ impl Node for Expression {
     }
 }
 
+pub struct ParameterList(pub Vec<Identifier>);
+impl Display for ParameterList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (i, p) in self.0.iter().enumerate() {
+            write!(f, "{}", p)?;
+            if i < self.0.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Identifier {
     pub(crate) token: Token,
 }

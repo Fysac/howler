@@ -44,6 +44,7 @@ impl Precedence {
 }
 
 impl fmt::Display for ParseError {
+    // TODO: clean this up
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             UnexpectedToken { expected, found } => {
@@ -64,7 +65,11 @@ impl fmt::Display for ParseError {
                         };
                     }
                 };
-                write!(f, "expected {}, found '{}'", expected_str, found)
+                if *found == EOF {
+                    write!(f, "expected {}, found end of file", expected_str)
+                } else {
+                    write!(f, "expected {}, found '{}'", expected_str, found)
+                }
             }
         }
     }
@@ -190,6 +195,7 @@ impl Parser {
             Bang | Minus => self.parse_prefix()?,
             LeftParen => self.parse_grouped_expression()?,
             If => self.parse_if_expression()?,
+            Function => self.parse_function_literal()?,
             _ => Err(UnexpectedToken {
                 expected: None,
                 found: cur.kind,
@@ -283,6 +289,49 @@ impl Parser {
             consequence,
             alternative,
         }))
+    }
+
+    fn parse_function_literal(&mut self) -> ParseResult<Expression> {
+        let token = self.cur_token.clone();
+        self.expect_peek_kind(LeftParen)?;
+
+        // Move to start of parameter list
+        self.next_token();
+        let parameters = self.parse_parameter_list()?;
+        let body = self.parse_block()?;
+
+        Ok(Expression::FunctionLiteral {
+            token,
+            parameters,
+            body,
+        })
+    }
+
+    fn parse_parameter_list(&mut self) -> ParseResult<ParameterList> {
+        let mut params = vec![];
+
+        while !self.cur_token_is_kind(RightParen) {
+            match self.cur_token.kind {
+                Ident(_) => params.push(Identifier {
+                    token: self.cur_token.clone(),
+                }),
+                _ => {
+                    return Err(UnexpectedToken {
+                        expected: Some(Ident("_".to_owned())),
+                        found: self.cur_token.kind.clone(),
+                    });
+                }
+            }
+
+            if let Err(_) = self.expect_peek_kind(Comma) {
+                // If the next token isn't a comma, it must be a closing parenthesis
+                self.expect_peek_kind(RightParen)?;
+            } else {
+                self.next_token();
+            }
+        }
+
+        Ok(ParameterList(params))
     }
 
     // TODO: address parse_program code duplication
@@ -696,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn test_operator_precedence_parsing() {
+    fn test_operator_precedence() {
         struct Test {
             input: String,
             expected: String,
@@ -940,6 +989,73 @@ mod tests {
             panic!("expected Expression::Identifier");
         };
         assert_eq!(token.to_string(), "y");
+    }
+
+    #[test]
+    fn test_function_literal() {
+        struct FunctionLiteralTest {
+            input: String,
+            expected_params: Vec<String>,
+            expected_body: String,
+        }
+
+        let tests = vec![
+            FunctionLiteralTest {
+                input: "fn(x, y) { x + y; }".to_owned(),
+                expected_params: vec!["x".to_owned(), "y".to_owned()],
+                expected_body: "(x + y);".to_owned(),
+            },
+            FunctionLiteralTest {
+                input: "let fn1 = fn() { xyz; };".to_owned(),
+                expected_params: vec![],
+                expected_body: "xyz;".to_owned(),
+            },
+            FunctionLiteralTest {
+                input: "let fn2 = fn(a) {
+                            let y = x + 2;
+                        };"
+                .to_owned(),
+                expected_params: vec!["a".to_owned()],
+                expected_body: "let y = (x + 2);".to_owned(),
+            },
+            FunctionLiteralTest {
+                input: "let fn3 = fn(a, b, c) {
+                            if (b) {
+                                return a * c + 42;
+                            }
+                        };"
+                .to_owned(),
+                expected_params: vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
+                expected_body: "if (b) { return ((a * c) + 42); };".to_owned(),
+            },
+        ];
+
+        for t in tests {
+            let l = Lexer::new(t.input.into_bytes());
+            let mut parser = Parser::new(l);
+            let prog = parser.parse_program();
+            assert_eq!(parser.errors.len(), 0);
+            assert_eq!(prog.statements.len(), 1);
+
+            let function_literal = match &prog.statements[0] {
+                Statement::Let { value, .. } => value,
+                Statement::Expression { expression, .. } => expression,
+                _ => panic!("expected Statement::Let or Statement::Expression"),
+            };
+
+            let Expression::FunctionLiteral {
+                parameters, body, ..
+            } = function_literal
+            else {
+                panic!("expected Expression::FunctionLiteral");
+            };
+
+            assert_eq!(parameters.0.len(), t.expected_params.len());
+            for (i, p) in parameters.0.iter().enumerate() {
+                assert_eq!(p.token_literal(), t.expected_params[i]);
+            }
+            assert_eq!(body.to_string(), t.expected_body);
+        }
     }
 
     fn test_int_literal_expression(expr: &Expression, expected_value: i64) {

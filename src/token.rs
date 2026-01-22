@@ -92,7 +92,7 @@ impl fmt::Display for TokenKind {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Token {
     pub kind: TokenKind,
     // TODO: add line and column numbers
@@ -170,7 +170,7 @@ impl Lexer {
                     Token {
                         kind: TokenKind::Illegal(self.c.to_string()),
                     }
-                }
+                };
             }
         };
         Token { kind }
